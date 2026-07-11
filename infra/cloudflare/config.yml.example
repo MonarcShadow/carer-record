@@ -1,0 +1,11 @@
+# Plantilla de configuración para Cloudflare Tunnel
+# Copiar a ~/.cloudflared/config.yml y completar los valores.
+# Este archivo NO debe contener el UUID ni rutas reales — solo es referencia.
+#
+# Ver infra/README.md para instrucciones completas.
+
+tunnel: <UUID-del-tunel>
+credentials-file: /home/<usuario>/.cloudflared/<UUID-del-tunel>.json
+
+ingress:
+  - service: http://localhost:8000

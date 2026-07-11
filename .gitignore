@@ -1,0 +1,137 @@
+# =============================================================
+#  Carer Record — .gitignore
+# =============================================================
+
+
+# -------------------------------------------------------------
+# Flutter / Dart
+# -------------------------------------------------------------
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+*.dart_tool/
+
+# Archivos generados por flutter pub get
+pubspec.lock     # Comentar esta línea si el equipo quiere fijar versiones exactas
+
+# Cobertura de tests
+coverage/
+*.lcov
+
+
+# -------------------------------------------------------------
+# Android
+# -------------------------------------------------------------
+**/android/local.properties
+**/android/.gradle/
+**/android/key.properties          # ← firma de release, NUNCA subir
+**/android/app/google-services.json
+**/android/captures/
+**/android/.idea/
+
+# Keystore de release
+*.jks
+*.keystore
+
+
+# -------------------------------------------------------------
+# IDEs
+# -------------------------------------------------------------
+
+# VS Code
+.vscode/
+!.vscode/extensions.json           # Se puede compartir para recomendar extensiones
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Xcode (aunque el target sea Android, puede generarse)
+*.xcworkspace
+xcuserdata/
+
+
+# -------------------------------------------------------------
+# Python / FastAPI
+# -------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Entornos virtuales
+venv/
+.venv/
+env/
+.env/
+
+# Variables de entorno (credenciales)
+.env
+.env.*
+!.env.example                      # El ejemplo SÍ se sube como referencia
+
+# Distribución / empaquetado
+dist/
+build/
+*.egg-info/
+*.egg
+pip-wheel-metadata/
+
+# Pytest
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# mypy
+.mypy_cache/
+
+
+# -------------------------------------------------------------
+# Base de datos
+# -------------------------------------------------------------
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+
+# Dumps de MariaDB/MySQL con datos reales
+*.sql.gz
+# Nota: init_db.sql (schema vacío) SÍ se versiona
+
+
+# -------------------------------------------------------------
+# Cloudflare Tunnel
+# -------------------------------------------------------------
+# Credenciales del túnel — NUNCA subir
+*.json                             # cert.json / credentials generados por cloudflared
+infra/cloudflare/credentials/
+~/.cloudflared/                    # ruta local del sistema, por referencia
+
+
+# -------------------------------------------------------------
+# Logs y temporales
+# -------------------------------------------------------------
+*.log
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+
+# -------------------------------------------------------------
+# Datos de prueba con información sensible
+# -------------------------------------------------------------
+# Bundles Synthea está bien subirlos si son sintéticos.
+# Si en algún momento se usan datos reales de pacientes:
+# data/real/
+# integration/test_data/real/
