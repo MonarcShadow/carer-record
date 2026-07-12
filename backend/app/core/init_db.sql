@@ -125,3 +125,101 @@ CREATE TABLE IF NOT EXISTS fhir_sync_log (
 INSERT IGNORE INTO users (id, name, email, role, password_hash) VALUES
 (UUID(), 'Admin Sistema', 'admin@hospital.cl', 'admin',
  '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBpj2PgCf2Cxbe');
+USE carer_record;
+
+-- ------------------------------------------------------------
+-- Encuentros / Hospitalizaciones
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS encounters (
+    id              VARCHAR(36)  PRIMARY KEY,
+    patient_id      VARCHAR(36)  NOT NULL,
+    external_id     VARCHAR(100),
+    source_system   ENUM('fhir','hl7v2','manual') NOT NULL DEFAULT 'fhir',
+    encounter_type  VARCHAR(100),
+    status          VARCHAR(50),
+    start_date      DATETIME,
+    end_date        DATETIME,
+    reason          TEXT,
+    created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
+    INDEX idx_patient (patient_id),
+    INDEX idx_external (external_id)
+) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
+-- Condiciones / Diagnósticos
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS conditions (
+    id              VARCHAR(36)  PRIMARY KEY,
+    patient_id      VARCHAR(36)  NOT NULL,
+    external_id     VARCHAR(100),
+    code            VARCHAR(50),
+    code_system     VARCHAR(100),
+    description     TEXT,
+    status          VARCHAR(50)  DEFAULT 'active',
+    onset_date      DATE,
+    abatement_date  DATE,
+    created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
+    INDEX idx_patient (patient_id),
+    INDEX idx_status  (patient_id, status)
+) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
+-- Medicamentos activos
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS medications (
+    id              VARCHAR(36)  PRIMARY KEY,
+    patient_id      VARCHAR(36)  NOT NULL,
+    external_id     VARCHAR(100),
+    code            VARCHAR(50),
+    code_system     VARCHAR(100),
+    description     TEXT,
+    dosage          VARCHAR(200),
+    frequency       VARCHAR(100),
+    status          VARCHAR(50)  DEFAULT 'active',
+    start_date      DATE,
+    end_date        DATE,
+    created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
+    INDEX idx_patient (patient_id),
+    INDEX idx_status  (patient_id, status)
+) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
+-- Observaciones / Signos vitales y laboratorio
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS observations (
+    id              VARCHAR(36)  PRIMARY KEY,
+    patient_id      VARCHAR(36)  NOT NULL,
+    external_id     VARCHAR(100),
+    code            VARCHAR(50),
+    code_system     VARCHAR(100),
+    description     VARCHAR(200),
+    value           VARCHAR(200),
+    unit            VARCHAR(50),
+    status          VARCHAR(50),
+    effective_date  DATETIME,
+    created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
+    INDEX idx_patient      (patient_id),
+    INDEX idx_patient_date (patient_id, effective_date DESC)
+) ENGINE=InnoDB;
+
+-- ------------------------------------------------------------
+-- Alergias
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS allergies (
+    id              VARCHAR(36)  PRIMARY KEY,
+    patient_id      VARCHAR(36)  NOT NULL,
+    external_id     VARCHAR(100),
+    code            VARCHAR(50),
+    code_system     VARCHAR(100),
+    description     TEXT,
+    severity        VARCHAR(50),
+    status          VARCHAR(50)  DEFAULT 'active',
+    onset_date      DATE,
+    created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
+    INDEX idx_patient (patient_id)
+) ENGINE=InnoDB;
