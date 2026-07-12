@@ -171,7 +171,54 @@ def _extract_patient_extended(res: dict) -> dict:
         "deceased_date":  deceased_date,
     }
 
+def _extract_location(entries: list, patient_ext_id: str) -> dict:
+    """
+    Busca el encuentro más reciente del paciente y extrae ubicación.
+    En datos reales: 'Sala UCI - Cama 3' → ward='UCI', bed_number='3'
+    En Synthea: nombre del establecimiento → ward=display, bed_number=None
+    """
+    latest_encounter = None
+    latest_date      = None
 
+    for entry in entries:
+        res = entry.get("resource", {})
+        if res.get("resourceType") != "Encounter":
+            continue
+        pat_ref = _extract_ref_id(
+            res.get("subject", {}).get("reference", "")
+        )
+        if pat_ref != patient_ext_id:
+            continue
+        locations = res.get("location", [])
+        if not locations:
+            continue
+        period    = res.get("period", {})
+        start_str = period.get("start", "")
+        if start_str and (latest_date is None or start_str > latest_date):
+            latest_date     = start_str
+            latest_encounter = res
+
+    if not latest_encounter:
+        return {"ward": None, "bed_number": None, "admission_date": None}
+
+    display = latest_encounter["location"][0].get("location", {}).get("display", "")
+    period  = latest_encounter.get("period", {})
+
+    # Intentar parsear formato "Sala X - Cama Y" de sistemas reales
+    ward       = None
+    bed_number = None
+    if " - Cama " in display:
+        parts      = display.split(" - Cama ")
+        ward       = parts[0].replace("Sala ", "").strip()
+        bed_number = parts[1].strip() if len(parts) > 1 else None
+    elif display:
+        ward = _truncate(display, 100)
+
+    return {
+        "ward":           ward,
+        "bed_number":     _truncate(bed_number, 20) if bed_number else None,
+        "admission_date": _datetime(period.get("start")),
+    }
 # ── Importación ───────────────────────────────────────────────────────────────
 
 def import_bundle(conn, bundle_path: Path) -> dict:
@@ -222,6 +269,7 @@ def import_bundle(conn, bundle_path: Path) -> dict:
         internal_id = str(uuid.uuid4())
         first, last = _name(res.get("name", []))
         extended    = _extract_patient_extended(res)
+        location    = _extract_location(entries, ext_id)
 
         try:
             cursor.execute(
@@ -230,9 +278,11 @@ def import_bundle(conn, bundle_path: Path) -> dict:
                     (id, external_id, source_system,
                      first_name, last_name, birth_date, gender, local_id,
                      phone, address, marital_status, language, ethnicity,
-                     deceased, deceased_date)
+                     deceased, deceased_date,
+                     ward, bed_number, admission_date)
                 VALUES (%s, %s, 'fhir', %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s, %s, %s, %s)
+                        %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s)
                 """,
                 (
                     internal_id, ext_id,
@@ -247,6 +297,9 @@ def import_bundle(conn, bundle_path: Path) -> dict:
                     extended["ethnicity"],
                     extended["deceased"],
                     extended["deceased_date"],
+                    location["ward"],
+                    location["bed_number"],
+                    location["admission_date"],
                 ),
             )
 
