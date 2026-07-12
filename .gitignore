@@ -112,7 +112,6 @@ htmlcov/
 # Cloudflare Tunnel
 # -------------------------------------------------------------
 # Credenciales del túnel — NUNCA subir
-*.json                             # cert.json / credentials generados por cloudflared
 infra/cloudflare/credentials/
 ~/.cloudflared/                    # ruta local del sistema, por referencia
 
@@ -134,4 +133,11 @@ desktop.ini
 # Bundles Synthea está bien subirlos si son sintéticos.
 # Si en algún momento se usan datos reales de pacientes:
 # data/real/
-# integration/test_data/real/integration/test_data/
+# integration/test_data/real/
+
+
+# -------------------------------------------------------------
+# Datos de prueba
+# -------------------------------------------------------------
+# Bundles Synthea — demasiado pesados para el repo (~385 MB)
+integration/test_data/
