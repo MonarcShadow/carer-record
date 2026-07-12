@@ -134,4 +134,4 @@ desktop.ini
 # Bundles Synthea está bien subirlos si son sintéticos.
 # Si en algún momento se usan datos reales de pacientes:
 # data/real/
-# integration/test_data/real/
+# integration/test_data/real/integration/test_data/

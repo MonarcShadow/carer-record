@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS patients (
     birth_date              DATE,
     gender                  ENUM('male','female','other','unknown') DEFAULT 'unknown',
     -- Identificador local (RUT u otro documento)
-    local_id                VARCHAR(30),
+    local_id                VARCHAR(500),
     -- Ubicación actual
     ward                    VARCHAR(100),   -- Ej: "UCI", "Pediatría"
     bed_number              VARCHAR(20),

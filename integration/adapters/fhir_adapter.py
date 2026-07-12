@@ -24,8 +24,8 @@ import mysql.connector
 
 DB_CONFIG = {
     "host":     "localhost",
-    "user":     "carer_user",
-    "password": "CAMBIAR_EN_PRODUCCION",
+    "user":     "admin",
+    "password": "admin",
     "database": "carer_record",
 }
 
