@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from app.core.config import settings
 from app.core.database import engine
+from app.api.v1.routes.auth import router as auth_router
 from sqlalchemy import text
 
 app = FastAPI(
@@ -8,6 +9,8 @@ app = FastAPI(
     version="0.1.0",
     docs_url="/docs",
 )
+
+app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
 
 @app.get("/")
 def root():
