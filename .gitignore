@@ -140,4 +140,4 @@ desktop.ini
 # Datos de prueba
 # -------------------------------------------------------------
 # Bundles Synthea — demasiado pesados para el repo (~385 MB)
-integration/test_data/
+integration/test_data/fhir
