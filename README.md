@@ -73,7 +73,7 @@ carer-record/
 ### 1. Clonar el repositorio
 
 ```bash
-git clone https://github.com/<org>/carer-record.git
+git clone [https://github.com/<org>/carer-record.git](https://github.com/MonarcShadow/carer-record.git)
 cd carer-record
 ```
 
