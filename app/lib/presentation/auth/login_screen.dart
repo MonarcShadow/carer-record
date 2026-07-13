@@ -22,11 +22,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _obscurePassword = true;
   bool _isLoading       = false;
+  bool _hasSession = false;
 
   @override
   void initState() {
     super.initState();
-    _tryBiometricLogin();
+    _checkSession();
   }
 
   @override
@@ -35,6 +36,15 @@ class _LoginScreenState extends State<LoginScreen> {
     _passwordController.dispose();
     super.dispose();
   }
+
+  Future<void> _checkSession() async {
+  final session = await AuthPreferences.getSession();
+  final biometric = await AuthPreferences.getBiometric();
+  setState(() {
+    _hasSession = session['token'] != null && biometric;
+  });
+  if (_hasSession) _tryBiometricLogin();
+}
 
   Future<void> _tryBiometricLogin() async {
     final biometricEnabled = await AuthPreferences.getBiometric();
@@ -166,7 +176,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 48),
                 TextFormField(
                   controller: _identifierController,
-                  keyboardType: TextInputType.emailAddress,
+                  keyboardType: TextInputType.text,
                   decoration: const InputDecoration(
                     labelText: 'RUT o correo institucional',
                     hintText: '12.345.678-9',
@@ -202,15 +212,16 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: const Text('Ingresar al sistema'),
                       ),
                 const SizedBox(height: 24),
-                TextButton.icon(
-                  onPressed: _tryBiometricLogin,
-                  icon: const Icon(Icons.fingerprint,
-                      color: AppTheme.textSecondary),
-                  label: const Text(
-                    'Acceso biométrico disponible',
-                    style: TextStyle(color: AppTheme.textSecondary),
+                if (_hasSession)
+                  TextButton.icon(
+                    onPressed: _tryBiometricLogin,
+                    icon: const Icon(Icons.fingerprint,
+                        color: AppTheme.textSecondary),
+                    label: const Text(
+                      'Acceso biométrico disponible',
+                      style: TextStyle(color: AppTheme.textSecondary),
+                    ),
                   ),
-                ),
               ],
             ),
           ),
