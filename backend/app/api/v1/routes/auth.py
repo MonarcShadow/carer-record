@@ -9,27 +9,29 @@ router = APIRouter()
 
 @router.post("/login", response_model=TokenResponse)
 def login(request: LoginRequest, db: Session = Depends(get_db)):
-    result = db.execute(
-        text("SELECT id, name, role, password_hash, active FROM users WHERE email = :email"),
-        {"email": request.email}
-    ).fetchone()
+    # Detectar si es RUT o correo
+    identifier = request.email.strip()
+    if "@" in identifier:
+        query = "SELECT id, name, role, password_hash, active FROM users WHERE email = :val"
+    else:
+        query = "SELECT id, name, role, password_hash, active FROM users WHERE rut = :val"
+
+    result = db.execute(text(query), {"val": identifier}).fetchone()
 
     if not result:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Correo o contraseña incorrectos"
+            detail="Credenciales incorrectas"
         )
-
     if not result.active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Usuario inactivo"
         )
-
     if not verify_password(request.password, result.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Correo o contraseña incorrectos"
+            detail="Credenciales incorrectas"
         )
 
     token = create_access_token({
@@ -42,5 +44,5 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
         access_token=token,
         user_name=result.name,
         user_role=result.role,
-        user_email=request.email,
-)
+        user_email=identifier,
+    )

@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS users (
     id            VARCHAR(36)  PRIMARY KEY,
     name          VARCHAR(200) NOT NULL,
     email         VARCHAR(200) NOT NULL UNIQUE,
+    rut           VARCHAR(12)  NOT NULL UNIQUE,
     role          ENUM('nurse','doctor','admin','tech') NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     active        BOOLEAN      NOT NULL DEFAULT TRUE,
