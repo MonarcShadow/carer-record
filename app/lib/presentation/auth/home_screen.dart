@@ -59,8 +59,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _logout() async {
-    // No borramos toda la sesión para permitir reingreso con huella
-    // Solo navegamos al login
+    await AuthPreferences.clearSession();// se se quita esta linea se mantiene la credencial para el inicio de sesion con huella aunque se de a cerrar sesion, si se deja la linea se borra la credencial y no se puede iniciar sesion con huella hasta que se vuelva a iniciar sesion con usuario y contraseña
     if (!mounted) return;
     Navigator.pushReplacement(
       context,
