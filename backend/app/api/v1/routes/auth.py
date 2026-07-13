@@ -44,5 +44,5 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
         access_token=token,
         user_name=result.name,
         user_role=result.role,
-        user_email=identifier,
+        user_email=result.email,
     )
