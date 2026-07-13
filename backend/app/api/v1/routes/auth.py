@@ -12,9 +12,9 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     # Detectar si es RUT o correo
     identifier = request.email.strip()
     if "@" in identifier:
-        query = "SELECT id, name, role, password_hash, active FROM users WHERE email = :val"
+        query = "SELECT id, name, email, role, password_hash, active FROM users WHERE email = :val"
     else:
-        query = "SELECT id, name, role, password_hash, active FROM users WHERE rut = :val"
+        query = "SELECT id, name, email, role, password_hash, active FROM users WHERE rut = :val"
 
     result = db.execute(text(query), {"val": identifier}).fetchone()
 
