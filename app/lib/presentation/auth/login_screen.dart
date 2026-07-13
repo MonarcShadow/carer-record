@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../data/remote/auth_service.dart';
-import '../../data/remote/dto/auth_dto.dart';
 import 'home_screen.dart';
+import '../../data/local/auth_preferences.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -36,6 +36,14 @@ class _LoginScreenState extends State<LoginScreen> {
         _identifierController.text.trim(),
         _passwordController.text,
       );
+
+      await AuthPreferences.saveSession(
+        token:     response.accessToken,
+        userName:  response.userName,
+        userRole:  response.userRole,
+        userEmail: _identifierController.text.trim(),
+      );
+
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
