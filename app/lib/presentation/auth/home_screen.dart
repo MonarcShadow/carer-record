@@ -59,7 +59,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _logout() async {
-    await AuthPreferences.clearSession();
+    // No borramos toda la sesión para permitir reingreso con huella
+    // Solo navegamos al login
     if (!mounted) return;
     Navigator.pushReplacement(
       context,

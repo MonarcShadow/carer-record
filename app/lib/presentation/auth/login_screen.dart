@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:local_auth/local_auth.dart';
 import '../../core/theme.dart';
 import '../../data/remote/auth_service.dart';
-import 'home_screen.dart';
+import '../../data/remote/dto/auth_dto.dart';
 import '../../data/local/auth_preferences.dart';
+import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -12,11 +14,20 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _formKey = GlobalKey<FormState>();
+  final _formKey             = GlobalKey<FormState>();
   final _identifierController = TextEditingController();
-  final _passwordController = TextEditingController();
+  final _passwordController  = TextEditingController();
+  final _authService         = AuthService();
+  final _localAuth           = LocalAuthentication();
+
   bool _obscurePassword = true;
-  bool _isLoading = false;
+  bool _isLoading       = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _tryBiometricLogin();
+  }
 
   @override
   void dispose() {
@@ -25,7 +36,51 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  final _authService = AuthService();
+  Future<void> _tryBiometricLogin() async {
+    final biometricEnabled = await AuthPreferences.getBiometric();
+    if (!biometricEnabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Activa el acceso biométrico desde el menú')),
+      );
+      return;
+    }
+
+    try {
+      final canCheck = await _localAuth.canCheckBiometrics;
+      if (!canCheck) return;
+
+      final authenticated = await _localAuth.authenticate(
+        localizedReason: 'Usa tu huella para ingresar',
+      );
+
+      if (!authenticated || !mounted) return;
+
+      final session = await AuthPreferences.getSession();
+      if (session['token'] == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Inicia sesión con correo y contraseña la primera vez'),
+          ),
+        );
+        return;
+      }
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => HomeScreen(
+            user: LoginResponseDto(
+              accessToken: session['token']!,
+              tokenType:   'bearer',
+              userName:    session['userName'] ?? '',
+              userRole:    session['userRole'] ?? '',
+              userEmail:   session['userEmail'] ?? '',
+            ),
+          ),
+        ),
+      );
+    } catch (_) {}
+  }
 
   Future<void> _handleLogin() async {
     if (!_formKey.currentState!.validate()) return;
@@ -47,9 +102,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(
-          builder: (_) => HomeScreen(user: response),
-        ),
+        MaterialPageRoute(builder: (_) => HomeScreen(user: response)),
       );
     } catch (e) {
       if (!mounted) return;
@@ -77,7 +130,6 @@ class _LoginScreenState extends State<LoginScreen> {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 const SizedBox(height: 24),
-                // Logo
                 Container(
                   width: 72,
                   height: 72,
@@ -109,13 +161,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 6),
                 const Text(
                   'Acceso institucional asistencial',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: AppTheme.textSecondary,
-                  ),
+                  style: TextStyle(fontSize: 14, color: AppTheme.textSecondary),
                 ),
                 const SizedBox(height: 48),
-                // RUT o correo
                 TextFormField(
                   controller: _identifierController,
                   keyboardType: TextInputType.emailAddress,
@@ -127,7 +175,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       v == null || v.isEmpty ? 'Ingresa tu RUT o correo' : null,
                 ),
                 const SizedBox(height: 16),
-                // Contraseña
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
@@ -148,7 +195,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       v == null || v.isEmpty ? 'Ingresa tu contraseña' : null,
                 ),
                 const SizedBox(height: 28),
-                // Botón login
                 _isLoading
                     ? const CircularProgressIndicator(color: AppTheme.primary)
                     : ElevatedButton(
@@ -156,9 +202,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: const Text('Ingresar al sistema'),
                       ),
                 const SizedBox(height: 24),
-                // Biométrico
                 TextButton.icon(
-                  onPressed: () {},
+                  onPressed: _tryBiometricLogin,
                   icon: const Icon(Icons.fingerprint,
                       color: AppTheme.textSecondary),
                   label: const Text(
