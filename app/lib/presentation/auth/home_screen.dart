@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../admin/users_screen.dart';
+import '../admin/user_form_screen.dart';
 import '../../core/theme.dart';
 import '../../data/remote/dto/auth_dto.dart';
 import '../widgets/app_drawer.dart';
@@ -94,12 +96,36 @@ class _HomeScreenState extends State<HomeScreen> {
             mainAxisSpacing: 16,
             childAspectRatio: 1.1,
             children: [
-              _ActionCard(icon: Icons.person_add,     label: 'Agregar médico',      onTap: () {}),
-              _ActionCard(icon: Icons.people,         label: 'Gestionar usuarios',  onTap: () {}),
-              _ActionCard(icon: Icons.local_hospital, label: 'Pacientes',           onTap: () {}),
-              _ActionCard(icon: Icons.bar_chart,      label: 'Estadísticas',        onTap: () {}),
-              _ActionCard(icon: Icons.settings,       label: 'Configuración',       onTap: () {}),
-              _ActionCard(icon: Icons.mic,            label: 'Comando de voz',      onTap: () {}),
+              _ActionCard(
+                icon: Icons.person_add,     
+                label: 'Agregar médico',      
+                onTap: () async {
+                  await Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const UserFormScreen()));
+                }),
+              _ActionCard(
+                icon: Icons.people,         
+                label: 'Gestionar usuarios',  
+                onTap: () async {
+                  await Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const UsersScreen()));
+                }),
+              _ActionCard(
+                icon: Icons.local_hospital, 
+                label: 'Pacientes',           
+                onTap: () {}),
+              _ActionCard(
+                icon: Icons.bar_chart,      
+                label: 'Estadísticas',        
+                onTap: () {}),
+              _ActionCard(
+                icon: Icons.settings,       
+                label: 'Configuración',       
+                onTap: () {}),
+              _ActionCard(
+                icon: Icons.mic,            
+                label: 'Comando de voz',      
+                onTap: () {}),
             ],
           ),
         ],
