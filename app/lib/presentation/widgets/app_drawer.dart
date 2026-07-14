@@ -98,7 +98,7 @@ class _AppDrawerState extends State<AppDrawer> {
                 children: [
                   CircleAvatar(
                     radius: 28,
-                    backgroundColor: Colors.white.withOpacity(0.2),
+                    backgroundColor: Colors.white.withValues(alpha: 0.2),
                     child: Text(
                       _initials(widget.user.userName),
                       style: const TextStyle(
@@ -120,7 +120,7 @@ class _AppDrawerState extends State<AppDrawer> {
                   Text(
                     _roleLabel(widget.user.userRole),
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.8),
+                      color: Colors.white.withValues(alpha: 0.8),
                       fontSize: 13,
                     ),
                   ),
@@ -142,7 +142,7 @@ class _AppDrawerState extends State<AppDrawer> {
               ),
               trailing: Switch(
                 value: _biometricEnabled,
-                activeColor: AppTheme.primary,
+                activeThumbColor: AppTheme.primary,
                 onChanged: _hasBiometrics ? _toggleBiometric : null,
               ),
             ),
@@ -156,7 +156,7 @@ class _AppDrawerState extends State<AppDrawer> {
               subtitle: const Text('Próximamente', style: TextStyle(fontSize: 12)),
               trailing: Switch(
                 value: _darkMode,
-                activeColor: AppTheme.primary,
+                activeThumbColor: AppTheme.primary,
                 onChanged: (value) async {
                   await AuthPreferences.setDarkMode(value);
                   setState(() => _darkMode = value);
