@@ -5,6 +5,18 @@ import '../../data/remote/auth_service.dart';
 import '../../data/remote/dto/auth_dto.dart';
 import '../../data/local/auth_preferences.dart';
 import 'home_screen.dart';
+import '../patients/doctor_screen.dart';
+import '../patients/nurse_screen.dart';
+import '../patients/tech_screen.dart';
+
+Widget _screenForRole(LoginResponseDto user) {
+  switch (user.userRole) {
+    case 'doctor': return DoctorScreen(user: user);
+    case 'nurse':  return NurseScreen(user: user);
+    case 'tech':   return TechScreen(user: user);
+    default:       return HomeScreen(user: user);
+  }
+}
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -49,6 +61,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _tryBiometricLogin() async {
     final biometricEnabled = await AuthPreferences.getBiometric();
     if (!biometricEnabled) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Activa el acceso biométrico desde el menú')),
       );
@@ -67,19 +80,21 @@ class _LoginScreenState extends State<LoginScreen> {
 
       final session = await AuthPreferences.getSession();
       if (session['token'] == null) {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Inicia sesión con correo y contraseña la primera vez'),
+            content: Text('Sesión cerrada. Ingresa con correo y contraseña para reactivar la huella.'),
           ),
         );
         return;
       }
 
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) => HomeScreen(
-            user: LoginResponseDto(
+          builder: (_) => _screenForRole(
+            LoginResponseDto(
               accessToken: session['token']!,
               tokenType:   'bearer',
               userName:    session['userName'] ?? '',
@@ -106,13 +121,13 @@ class _LoginScreenState extends State<LoginScreen> {
         token:     response.accessToken,
         userName:  response.userName,
         userRole:  response.userRole,
-        userEmail: _identifierController.text.trim(),
+        userEmail: response.userEmail,
       );
 
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => HomeScreen(user: response)),
+        MaterialPageRoute(builder: (_) => _screenForRole(response)),
       );
     } catch (e) {
       if (!mounted) return;
