@@ -237,6 +237,6 @@ CREATE TABLE IF NOT EXISTS allergies (
 -- Usuario de prueba
 -- Contraseña: admin (bcrypt — cambiar en producción)
 -- ------------------------------------------------------------
-INSERT IGNORE INTO users (id, name, email, role, password_hash) VALUES
-(UUID(), 'Admin Sistema', 'admin@hospital.cl', 'admin',
+INSERT IGNORE INTO users (id, name, email, rut, role, password_hash) VALUES
+(UUID(), 'Admin Sistema', 'admin@hospital.cl', '12345678-9', 'admin',
  '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBpj2PgCf2Cxbe');
