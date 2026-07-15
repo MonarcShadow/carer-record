@@ -4,6 +4,8 @@ import '../../core/theme.dart';
 import '../../data/local/auth_preferences.dart';
 import '../../data/remote/dto/auth_dto.dart';
 import '../auth/login_screen.dart';
+import '../settings/ai_settings_screen.dart';
+
 
 class AppDrawer extends StatefulWidget {
   final LoginResponseDto user;
@@ -145,6 +147,19 @@ class _AppDrawerState extends State<AppDrawer> {
                 activeThumbColor: AppTheme.primary,
                 onChanged: _hasBiometrics ? _toggleBiometric : null,
               ),
+            ),
+            const Divider(indent: 16, endIndent: 16),
+
+            ListTile(
+              leading: const Icon(Icons.psychology, color: AppTheme.primary),
+              title: const Text('Configuración de IA'),
+              onTap: () {
+                Navigator.pop(context); // cierra el drawer
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AiSettingsScreen()),
+                );
+              },
             ),
 
             const Divider(indent: 16, endIndent: 16),
