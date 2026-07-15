@@ -63,13 +63,16 @@ CREATE TABLE IF NOT EXISTS patients (
 -- Notas de turno
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS notes (
-    id           VARCHAR(36)  PRIMARY KEY,
-    patient_id   VARCHAR(36)  NOT NULL,
-    author_id    VARCHAR(36)  NOT NULL,
-    content      TEXT         NOT NULL,
-    input_method ENUM('text','voice') NOT NULL DEFAULT 'text',
-    synced_at    TIMESTAMP    NULL,
-    created_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    id                   VARCHAR(36)  PRIMARY KEY,
+    patient_id           VARCHAR(36)  NOT NULL,
+    author_id            VARCHAR(36)  NOT NULL,
+    content              TEXT         NOT NULL,
+    input_method         ENUM('text','voice') NOT NULL DEFAULT 'text',
+    synced_at            TIMESTAMP    NULL,
+    created_at           TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    audio_path           VARCHAR(500) NULL,
+    transcription_source ENUM('manual','auto_whisper') NOT NULL DEFAULT 'manual',
+    audio_confirmed      BOOLEAN NOT NULL DEFAULT TRUE,      
     FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
     FOREIGN KEY (author_id)  REFERENCES users(id),
     INDEX idx_patient_time (patient_id, created_at DESC)
