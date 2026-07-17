@@ -4,13 +4,11 @@ import 'package:flutter/foundation.dart';
 import 'package:archive/archive_io.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
-import '../../core/theme/theme.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../data/services/whisper_service.dart';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:async';
-
 
 enum WhisperModel {none, base, small }
 enum LlmModel { none, t5Small, gemma3 }
@@ -50,7 +48,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerPr
   double _t5SmallProgress      = 0;
   double _gemmaProgress        = 0;
 
-  // Textos de estado (Descargando vs Instalando)
+  // Textos de estado
   String _whisperBaseStatus  = '';
   String _whisperSmallStatus = '';
   String _t5SmallStatus      = '';
@@ -66,7 +64,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerPr
   // Animaciones para la barra de audio
   late AnimationController _micAnimationController;
   Timer? _waveformTimer;
-  Timer? _transcriptionTimer; // Timer para la transcripción en tiempo real
+  Timer? _transcriptionTimer; 
   final List<double> _amplitudes = List.filled(20, 0.1);
 
   String _whisperFolder() =>
@@ -112,37 +110,23 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerPr
     if (!status.isGranted) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Permiso de micrófono denegado')),
+          SnackBar(
+            content: const Text('Permiso de micrófono denegado'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
         );
       }
       return;
     }
     
-    // Quitar el foco del TextField para esconder el teclado al grabar
-    // Mover antes de operaciones async para evitar usar BuildContext
-    // a través de brechas async (lint: use_build_context_synchronously).
     FocusManager.instance.primaryFocus?.unfocus();
-    
-    // NOTA: Para transcripción en streaming (tiempo real)
-    // sherpa-onnx requiere el OnlineRecognizer, no el OfflineRecognizer.
-    // Whisper en sherpa-onnx es un modelo OFFLINE (procesa lotes de audio).
-    // Para simular el "tiempo real" con un modelo offline, 
-    // lo habitual es detener y reiniciar la grabación en trozos,
-    // o cambiar a un modelo Online (ej: zipformer) si quieres verdadero streaming.
-    // 
-    // Como tu servicio actual (WhisperService) usa OfflineRecognizer con Whisper,
-    // transcribir "mientras hablas" requiere modificar el servicio
-    // para capturar el stream de audio continuamente, o aceptar 
-    // que la transcripción llegará al finalizar.
-    // 
-    // Por ahora, WhisperService requiere detener la grabación para transcribir el archivo WAV completo.
     
     await _whisperService.startRecording();
     
     setState(() {
       _isRecording  = true;
       _testResult   = '';
-      _testController.text = 'Escuchando...'; // Feedback visual de que está activo
+      _testController.text = 'Escuchando...'; 
     });
     
     _micAnimationController.forward();
@@ -156,7 +140,6 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerPr
     setState(() { 
       _isRecording = false; 
       _transcribing = true; 
-      // Reiniciar amplitudes
       for (int i = 0; i < _amplitudes.length; i++) {
         _amplitudes[i] = 0.1;
       }
@@ -164,11 +147,9 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerPr
     
     _testController.text = 'Procesando audio...';
 
-    // 1. Obtener la ruta absoluta completa donde están los modelos
     final modelsPath = await _modelsDir();
     final absoluteModelPath = '$modelsPath/${_whisperFolder()}';
 
-    // 2. Pasar la ruta absoluta a tu WhisperService
     final result = await _whisperService.stopAndTranscribe(absoluteModelPath);
 
     setState(() {
@@ -178,20 +159,16 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerPr
     });
   }
 
-  // Simula la actividad del micrófono para la animación
   void _startWaveformSimulation() {
     _waveformTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
       if (!mounted) return;
       setState(() {
         for (int i = 0; i < _amplitudes.length; i++) {
-          // Genera valores aleatorios para simular amplitud.
-          // En una implementación real, esto vendría del nivel de decibelios del micrófono.
           _amplitudes[i] = math.max(0.1, math.Random().nextDouble());
         }
       });
     });
   }
-
 
   Future<String> _modelsDir() async {
     final dir = await getApplicationDocumentsDirectory();
@@ -212,7 +189,6 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerPr
            File('$modelsPath/whisper-small/small-tokens.txt').existsSync();
   }
 
-  // Verificación genérica para LLMs (verifica si la carpeta existe y no está vacía)
   bool _folderExistsAndNotEmpty(String modelsPath, String folder) {
     final dir = Directory('$modelsPath/$folder');
     return dir.existsSync() && dir.listSync().isNotEmpty;
@@ -226,13 +202,11 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerPr
     required void Function(String) onError,
   }) async {
     final modelsPath = await _modelsDir();
-    // 1. Usamos puros Strings para no enviar objetos que hagan fallar al Isolate
     final tempFilePath = '$modelsPath/$folderName.tar.bz2';
     final outDirPath = '$modelsPath/$folderName';
     final dio = Dio();
 
     try {
-      // Fase de Descarga (Esta parte funcionaba bien, no la alteramos)
       await dio.download(
         url,
         tempFilePath,
@@ -243,7 +217,6 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerPr
         },
       );
 
-      // Fase de Instalación (Donde ocurría el colapso)
       onUpdate(1.0, 'Instalando...');
 
       await compute(_extractTarInBackground, {
@@ -257,7 +230,6 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerPr
       final tempFile = File(tempFilePath);
       if (tempFile.existsSync()) tempFile.deleteSync();
       
-      // 3. Recortamos el error masivo para que no cubra la interfaz
       String errorMsg = e.toString();
       if (errorMsg.length > 150) {
         errorMsg = '${errorMsg.substring(0, 147)}...';
@@ -326,7 +298,10 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerPr
     onReset();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $error'), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text('Error: $error'), 
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
       );
     }
   }
@@ -380,16 +355,15 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerPr
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      // Se eliminó backgroundColor fijo
       appBar: AppBar(
         title: const Text('Configuración de IA'),
-        backgroundColor: AppTheme.primary,
-        foregroundColor: Colors.white,
-        elevation: 0,
+        // Se eliminaron backgroundColor, foregroundColor y elevation fijos
       ),
       body: GestureDetector(
-        // Para cerrar el teclado si se toca fuera de los inputs
         onTap: () => FocusScope.of(context).unfocus(),
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -421,7 +395,6 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerPr
                 onDownload: null,
                 hideDownload: true,
               ),
-
 
               const SizedBox(height: 12),
 
@@ -513,7 +486,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerPr
 
               _ModelCard(
                 title: 'Gemma 3 1B INT4',
-                description: '~529 MB · Limpieza clínica mas precisa.\\nEs mas lento',
+                description: '~529 MB · Limpieza clínica mas precisa.\nEs mas lento',
                 url: _gemmaUrl,
                 selected: _llmModel == LlmModel.gemma3,
                 downloaded: _gemmaDownloaded,
@@ -545,9 +518,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerPr
                 child: AnimatedBuilder(
                   animation: _micAnimationController,
                   builder: (context, child) {
-                    // Valores de animación
                     final expansionValue = _micAnimationController.value;
-                    // Anchura dinámica: desde 64 (botón circular) hasta ~300 (barra expandida)
                     final width = 64.0 + (expansionValue * 220.0);
                     
                     return GestureDetector(
@@ -557,28 +528,26 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerPr
                         height: 64,
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(32),
+                          // Colores dinámicos para el botón del micrófono
                           color: !_micAvailable
-                              ? const Color(0xFFE5E7EB)
+                              ? theme.disabledColor.withAlpha((0.15 * 255).round())
                               : _isRecording
-                                  ? Colors.red.withValues(alpha: 0.1)
-                                  : AppTheme.primary,
-                          // Se elimina el borde rojo del contenedor principal para que no se vea el doble borde
-                          // border: _isRecording ? Border.all(color: Colors.red, width: 2) : null,
+                                  ? theme.colorScheme.error.withAlpha((0.15 * 255).round())
+                                  : theme.colorScheme.primary,
                           boxShadow: _isRecording
                               ? [BoxShadow(
-                                  color: Colors.red.withValues(alpha: 0.2),
+                                  color: theme.colorScheme.error.withAlpha((0.25 * 255).round()),
                                   blurRadius: 12,
                                   spreadRadius: 2,
                                 )]
                               : [BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.1),
+                                  color: theme.shadowColor.withAlpha((0.1 * 255).round()),
                                   blurRadius: 4,
                                   offset: const Offset(0, 2),
                                 )],
                         ),
                         child: Stack(
                           children: [
-                            // Contenido expandido (Onda de audio y borde exterior simulado)
                             if (expansionValue > 0)
                               Positioned.fill(
                                 child: Opacity(
@@ -586,10 +555,9 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerPr
                                   child: Container(
                                     decoration: BoxDecoration(
                                       borderRadius: BorderRadius.circular(32),
-                                      border: Border.all(color: Colors.red, width: 2), // Borde animado
+                                      border: Border.all(color: theme.colorScheme.error, width: 2),
                                     ),
                                     child: Padding(
-                                      // Padding ajustado: left 64 para saltar el circulo rojo, right 20 para espaciado
                                       padding: const EdgeInsets.only(left: 64.0, right: 20.0), 
                                       child: LayoutBuilder(
                                         builder: (context, constraints) {
@@ -605,7 +573,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerPr
                                                     width: 3, 
                                                     height: 32 * _amplitudes[index],
                                                     decoration: BoxDecoration(
-                                                      color: Colors.red,
+                                                      color: theme.colorScheme.error,
                                                       borderRadius: BorderRadius.circular(2),
                                                     ),
                                                   ),
@@ -620,7 +588,6 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerPr
                                 ),
                               ),
                             
-                            // Icono de micrófono deslizable (El círculo sólido)
                             Positioned(
                               left: 0,
                               top: 0,
@@ -632,15 +599,16 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerPr
                                   color: !_micAvailable
                                       ? Colors.transparent
                                       : _isRecording
-                                          ? Colors.red // Círculo sólido rojo
+                                          ? theme.colorScheme.error
                                           : Colors.transparent,
                                 ),
                                 child: Center(
                                   child: Icon(
                                     _isRecording ? Icons.stop : Icons.mic,
+                                    // Adaptado para usar el onPrimary o un gris base cuando está deshabilitado
                                     color: !_micAvailable 
-                                        ? Colors.grey 
-                                        : _isRecording ? Colors.white : Colors.white,
+                                        ? theme.disabledColor 
+                                        : theme.colorScheme.onPrimary,
                                     size: 28,
                                   ),
                                 ),
@@ -664,13 +632,12 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerPr
                           : _transcribing
                               ? 'Transcribiendo...'
                               : 'Toca para grabar',
-                  style: TextStyle(
-                    fontSize: 12,
+                  style: theme.textTheme.bodySmall?.copyWith(
                     color: !_micAvailable
-                        ? AppTheme.textSecondary
+                        ? theme.disabledColor
                         : _isRecording
-                            ? Colors.red
-                            : AppTheme.textSecondary,
+                            ? theme.colorScheme.error
+                            : theme.textTheme.bodySmall?.color,
                   ),
                 ),
               ),
@@ -680,22 +647,10 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerPr
                 controller: _testController,
                 maxLines: 4,
                 readOnly: _transcribing,
-                decoration: InputDecoration(
+                // ¡Magia! Se eliminó todo el código duro de border y background.
+                // Automáticamente usará la decoración del InputDecorationTheme definido en theme.dart
+                decoration: const InputDecoration(
                   hintText: 'El texto transcrito aparecerá aquí...',
-                  filled: true,
-                  fillColor: Colors.white,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppTheme.primary, width: 2),
-                  ),
                 ),
               ),
               const SizedBox(height: 12),
@@ -718,23 +673,20 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerPr
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: theme.cardColor,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                        color: AppTheme.primary.withValues(alpha: 0.3)),
+                      color: theme.colorScheme.primary.withValues(alpha: 0.3)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Resultado:',
-                          style: TextStyle(
+                      Text('Resultado:',
+                          style: theme.textTheme.labelMedium?.copyWith(
                               fontWeight: FontWeight.w600,
-                              color: AppTheme.textSecondary,
-                              fontSize: 12)),
+                              color: theme.colorScheme.primary)),
                       const SizedBox(height: 8),
-                      Text(_testResult,
-                          style: const TextStyle(
-                              fontSize: 14, color: AppTheme.textPrimary)),
+                      Text(_testResult, style: theme.textTheme.bodyMedium),
                     ],
                   ),
                 ),
@@ -749,7 +701,6 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerPr
   }
 }
 
-// Función top-level para ejecutar en compute()
 void _extractTarInBackground(Map<String, String> args) {
   final tempFilePath = args['tempFilePath']!;
   final outDirPath   = args['outDirPath']!;
@@ -782,15 +733,17 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
     return Row(
       children: [
         Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: AppTheme.primary.withValues(alpha: 0.1),
+            color: theme.colorScheme.primary.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Icon(icon, color: AppTheme.primary, size: 20),
+          child: Icon(icon, color: theme.colorScheme.primary, size: 20),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -798,13 +751,9 @@ class _SectionHeader extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(title,
-                  style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.textPrimary)),
-              Text(subtitle,
-                  style: const TextStyle(
-                      fontSize: 12, color: AppTheme.textSecondary)),
+                  style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold)),
+              Text(subtitle, style: theme.textTheme.bodySmall),
             ],
           ),
         ),
@@ -845,21 +794,22 @@ class _ModelCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isInstalling = statusText == 'Instalando...';
+    final theme = Theme.of(context);
 
     return GestureDetector(
       onTap: onSelect,
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: theme.cardColor,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: selected ? AppTheme.primary : const Color(0xFFE5E7EB),
+            color: selected ? theme.colorScheme.primary : theme.dividerColor,
             width: selected ? 2 : 1,
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
+              color: theme.shadowColor.withValues(alpha: 0.04),
               blurRadius: 6,
               offset: const Offset(0, 2),
             ),
@@ -878,8 +828,8 @@ class _ModelCard extends StatelessWidget {
                         ? Icons.radio_button_checked
                         : Icons.radio_button_off,
                     color: selected
-                        ? AppTheme.primary
-                        : const Color(0xFF9CA3AF),
+                        ? theme.colorScheme.primary
+                        : theme.disabledColor,
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -888,33 +838,28 @@ class _ModelCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(title,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 15,
-                              color: AppTheme.textPrimary)),
+                          style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w600)),
                       const SizedBox(height: 2),
-                      Text(description,
-                          style: const TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.textSecondary)),
+                      Text(description, style: theme.textTheme.bodySmall),
                     ],
                   ),
                 ),
                 if (!hideDownload) ...[
                   if (downloading)
-                    const SizedBox(
+                    SizedBox(
                       width: 20,
                       height: 20,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: AppTheme.primary),
+                          strokeWidth: 2, color: theme.colorScheme.primary),
                     )
                   else if (downloaded) ...[
-                    const Icon(Icons.check_circle,
-                        color: AppTheme.primary, size: 22),
+                    Icon(Icons.check_circle,
+                        color: theme.colorScheme.primary, size: 22),
                     if (onDelete != null)
                       IconButton(
-                        icon: const Icon(Icons.delete_outline,
-                            color: Colors.red, size: 20),
+                        icon: Icon(Icons.delete_outline,
+                            color: theme.colorScheme.error, size: 20),
                         onPressed: onDelete,
                         tooltip: 'Eliminar modelo',
                         padding: EdgeInsets.zero,
@@ -922,8 +867,7 @@ class _ModelCard extends StatelessWidget {
                       ),
                   ] else
                     IconButton(
-                      icon: const Icon(Icons.download,
-                          color: AppTheme.primary),
+                      icon: Icon(Icons.download, color: theme.colorScheme.primary),
                       onPressed: onDownload,
                       tooltip: 'Descargar modelo',
                       padding: EdgeInsets.zero,
@@ -936,8 +880,8 @@ class _ModelCard extends StatelessWidget {
               const SizedBox(height: 12),
               LinearProgressIndicator(
                 value: isInstalling ? null : progress,
-                backgroundColor: const Color(0xFFE5E7EB),
-                color: AppTheme.primary,
+                backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
+                color: theme.colorScheme.primary,
                 borderRadius: BorderRadius.circular(4),
               ),
               const SizedBox(height: 4),
@@ -946,16 +890,14 @@ class _ModelCard extends StatelessWidget {
                 children: [
                   Text(
                     statusText,
-                    style: const TextStyle(
-                        fontSize: 11,
+                    style: theme.textTheme.labelSmall?.copyWith(
                         fontWeight: FontWeight.w500,
-                        color: AppTheme.primary),
+                        color: theme.colorScheme.primary),
                   ),
                   if (!isInstalling)
                     Text(
                       '${(progress * 100).toStringAsFixed(0)}%',
-                      style: const TextStyle(
-                          fontSize: 11, color: AppTheme.textSecondary),
+                      style: theme.textTheme.bodySmall,
                     ),
                 ],
               ),

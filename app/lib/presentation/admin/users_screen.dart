@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../core/theme/theme.dart';
 import '../../data/remote/users_service.dart';
 import 'user_form_screen.dart';
 
@@ -58,12 +57,17 @@ class _UsersScreenState extends State<UsersScreen> {
 
   String _roleLabel(String role) => _roleLabels[role] ?? role;
 
-  Color _roleColor(String role) {
+  Color _roleColor(String role, BuildContext context) {
+    // Es buena idea adaptar ligeramente los colores según el brillo
+    // pero si quieres mantener los mismos tonos, al menos aseguramos
+    // que se usen de forma que destaquen.
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
     switch (role) {
-      case 'admin':  return Colors.purple;
-      case 'doctor': return Colors.blue;
-      case 'nurse':  return Colors.teal;
-      case 'tech':   return Colors.orange;
+      case 'admin':  return isDark ? Colors.purpleAccent : Colors.purple;
+      case 'doctor': return isDark ? Colors.lightBlue : Colors.blue;
+      case 'nurse':  return isDark ? Colors.tealAccent : Colors.teal;
+      case 'tech':   return isDark ? Colors.orangeAccent : Colors.orange;
       default:       return Colors.grey;
     }
   }
@@ -78,7 +82,8 @@ class _UsersScreenState extends State<UsersScreen> {
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Eliminar', style: TextStyle(color: Colors.red)),
+            // Usamos color de error del tema
+            child: Text('Eliminar', style: TextStyle(color: Theme.of(context).colorScheme.error)),
           ),
         ],
       ),
@@ -90,24 +95,25 @@ class _UsersScreenState extends State<UsersScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString()), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text(e.toString()), 
+          backgroundColor: Theme.of(context).colorScheme.error
+        ),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      // Se eliminó backgroundColor fijo
       appBar: AppBar(
         title: const Text('Gestionar usuarios'),
-        backgroundColor: AppTheme.primary,
-        foregroundColor: Colors.white,
-        elevation: 0,
+        // Se eliminaron backgroundColor, foregroundColor y elevation fijos
       ),
       floatingActionButton: FloatingActionButton(
-        backgroundColor: AppTheme.primary,
-        foregroundColor: Colors.white,
+        // Heredará colorScheme.primary del tema automáticamente
         onPressed: () async {
           await Navigator.push(context,
             MaterialPageRoute(builder: (_) => const UserFormScreen()));
@@ -116,9 +122,9 @@ class _UsersScreenState extends State<UsersScreen> {
         child: const Icon(Icons.person_add),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
+          ? const Center(child: CircularProgressIndicator()) // Color dinámico
           : _error != null
-              ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
+              ? Center(child: Text(_error!, style: TextStyle(color: theme.colorScheme.error)))
               : Column(
                   children: [
                     // Filtro por rol
@@ -136,9 +142,12 @@ class _UsersScreenState extends State<UsersScreen> {
                             child: ChoiceChip(
                               label: Text(_roleLabel(role)),
                               selected: selected,
-                              selectedColor: AppTheme.primary,
+                              // El ChoiceChip ya maneja bien los colores si no los forzamos
+                              // pero podemos asegurarnos del texto
                               labelStyle: TextStyle(
-                                color: selected ? Colors.white : AppTheme.textPrimary,
+                                color: selected 
+                                    ? theme.colorScheme.onPrimary 
+                                    : theme.textTheme.bodyMedium?.color,
                                 fontWeight: FontWeight.w500,
                               ),
                               onSelected: (_) {
@@ -153,49 +162,56 @@ class _UsersScreenState extends State<UsersScreen> {
                     // Lista
                     Expanded(
                       child: _filtered.isEmpty
-                          ? const Center(child: Text('No hay usuarios en este rol'))
+                          ? Center(
+                              child: Text(
+                                'No hay usuarios en este rol',
+                                style: theme.textTheme.bodyLarge,
+                              )
+                            )
                           : ListView.builder(
                               padding: const EdgeInsets.fromLTRB(16, 0, 16, 80),
                               itemCount: _filtered.length,
                               itemBuilder: (_, i) {
                                 final u = _filtered[i];
+                                final roleColor = _roleColor(u.role, context);
+                                
                                 return Card(
+                                  // El color de la Card vendrá del CardTheme en theme.dart
                                   margin: const EdgeInsets.only(bottom: 10),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12)),
                                   child: ListTile(
                                     contentPadding: const EdgeInsets.symmetric(
                                         horizontal: 16, vertical: 8),
                                     leading: CircleAvatar(
-                                      backgroundColor: _roleColor(u.role).withValues(alpha: 0.15),
+                                      backgroundColor: roleColor.withValues(alpha: 0.15),
                                       child: Text(
                                         u.name.isNotEmpty ? u.name[0].toUpperCase() : '?',
                                         style: TextStyle(
-                                            color: _roleColor(u.role),
+                                            color: roleColor,
                                             fontWeight: FontWeight.bold),
                                       ),
                                     ),
-                                    title: Text(u.name,
-                                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                                    title: Text(
+                                      u.name,
+                                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)
+                                    ),
                                     subtitle: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Text(u.email, style: const TextStyle(fontSize: 12)),
-                                        Text('RUT: ${u.rut}',
-                                            style: const TextStyle(fontSize: 12)),
+                                        Text(u.email, style: theme.textTheme.bodySmall),
+                                        Text('RUT: ${u.rut}', style: theme.textTheme.bodySmall),
                                         Container(
                                           margin: const EdgeInsets.only(top: 4),
                                           padding: const EdgeInsets.symmetric(
                                               horizontal: 8, vertical: 2),
                                           decoration: BoxDecoration(
-                                            color: _roleColor(u.role).withValues(alpha: 0.1),
+                                            color: roleColor.withValues(alpha: 0.1),
                                             borderRadius: BorderRadius.circular(10),
                                           ),
                                           child: Text(
                                             _roleLabel(u.role),
                                             style: TextStyle(
                                                 fontSize: 11,
-                                                color: _roleColor(u.role),
+                                                color: roleColor,
                                                 fontWeight: FontWeight.w600),
                                           ),
                                         ),
@@ -205,8 +221,7 @@ class _UsersScreenState extends State<UsersScreen> {
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         IconButton(
-                                          icon: const Icon(Icons.edit,
-                                              color: AppTheme.primary),
+                                          icon: Icon(Icons.edit, color: theme.colorScheme.primary),
                                           onPressed: () async {
                                             await Navigator.push(context,
                                               MaterialPageRoute(
@@ -215,8 +230,7 @@ class _UsersScreenState extends State<UsersScreen> {
                                           },
                                         ),
                                         IconButton(
-                                          icon: const Icon(Icons.delete,
-                                              color: Colors.red),
+                                          icon: Icon(Icons.delete, color: theme.colorScheme.error),
                                           onPressed: () => _confirmDelete(u),
                                         ),
                                       ],

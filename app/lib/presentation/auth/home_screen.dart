@@ -23,112 +23,82 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme   = Theme.of(context).textTheme;
     return Scaffold(
-      backgroundColor: AppTheme.background,
       appBar: AppBar(
         title: const Text('Carer Record'),
-        backgroundColor: AppTheme.primary,
-        foregroundColor: Colors.white,
-        elevation: 0,
       ),
       drawer: AppDrawer(user: widget.user),
-      body: _buildAdminPanel(),
-    );
-  }
-
-  Widget _buildAdminPanel() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        children: [
-          const SizedBox(height: 16),
-          CircleAvatar(
-            radius: 48,
-            backgroundColor: AppTheme.primary,
-            child: Text(
-              _initials(widget.user.userName),
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 36,
-                fontWeight: FontWeight.bold,
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          children: [
+            const SizedBox(height: 16),
+            CircleAvatar(
+              radius: 48,
+              backgroundColor: AppTheme.primary,
+              child: Text(
+                _initials(widget.user.userName),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 36,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            widget.user.userName,
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: AppTheme.textPrimary,
+            const SizedBox(height: 16),
+            Text(
+              widget.user.userName,
+              style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
             ),
-          ),
-          const SizedBox(height: 4),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppTheme.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(20),
+            const SizedBox(height: 4),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Text(
+                'Administrador del Sistema',
+                style: TextStyle(
+                  color: AppTheme.primary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
             ),
-            child: const Text(
-              'Administrador del Sistema',
+            const SizedBox(height: 8),
+            Text(
+              widget.user.userEmail,
               style: TextStyle(
-                color: AppTheme.primary,
-                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurface.withValues(alpha: 0.6),
                 fontSize: 13,
               ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            widget.user.userEmail,
-            style: const TextStyle(
-              color: AppTheme.textSecondary,
-              fontSize: 13,
+            const SizedBox(height: 32),
+            GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 16,
+              childAspectRatio: 1.1,
+              children: [
+                _ActionCard(icon: Icons.person_add,     label: 'Agregar médico',
+                  onTap: () async => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const UserFormScreen()))),
+                _ActionCard(icon: Icons.people,         label: 'Gestionar usuarios',
+                  onTap: () async => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const UsersScreen()))),
+                _ActionCard(icon: Icons.local_hospital, label: 'Pacientes',     onTap: () {}),
+                _ActionCard(icon: Icons.bar_chart,      label: 'Estadísticas',  onTap: () {}),
+                _ActionCard(icon: Icons.settings,       label: 'Configuración', onTap: () {}),
+                _ActionCard(icon: Icons.mic,            label: 'Comando de voz',onTap: () {}),
+              ],
             ),
-          ),
-          const SizedBox(height: 32),
-          GridView.count(
-            crossAxisCount: 2,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-            childAspectRatio: 1.1,
-            children: [
-              _ActionCard(
-                icon: Icons.person_add,     
-                label: 'Agregar médico',      
-                onTap: () async {
-                  await Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const UserFormScreen()));
-                }),
-              _ActionCard(
-                icon: Icons.people,         
-                label: 'Gestionar usuarios',  
-                onTap: () async {
-                  await Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const UsersScreen()));
-                }),
-              _ActionCard(
-                icon: Icons.local_hospital, 
-                label: 'Pacientes',           
-                onTap: () {}),
-              _ActionCard(
-                icon: Icons.bar_chart,      
-                label: 'Estadísticas',        
-                onTap: () {}),
-              _ActionCard(
-                icon: Icons.settings,       
-                label: 'Configuración',       
-                onTap: () {}),
-              _ActionCard(
-                icon: Icons.mic,            
-                label: 'Comando de voz',      
-                onTap: () {}),
-            ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -143,12 +113,14 @@ class _ActionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: colorScheme.surface,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
@@ -164,7 +136,7 @@ class _ActionCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: AppTheme.primary.withValues(alpha: 0.1),
+                color: AppTheme.primary.withValues(alpha: 0.15),
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, color: AppTheme.primary, size: 28),
@@ -173,10 +145,10 @@ class _ActionCard extends StatelessWidget {
             Text(
               label,
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: AppTheme.textPrimary,
+                color: colorScheme.onSurface,
               ),
             ),
           ],

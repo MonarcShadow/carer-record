@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../core/theme/theme.dart';
 import '../../data/remote/users_service.dart';
 
 class UserFormScreen extends StatefulWidget {
@@ -83,7 +82,8 @@ class _UserFormScreenState extends State<UserFormScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(e.toString().replaceAll('Exception: ', '')),
-          backgroundColor: Colors.red,
+          // Usamos el color de error dinámico del tema
+          backgroundColor: Theme.of(context).colorScheme.error, 
         ),
       );
     } finally {
@@ -94,12 +94,11 @@ class _UserFormScreenState extends State<UserFormScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      // Se eliminó backgroundColor fijo para que use el del ThemeData
       appBar: AppBar(
         title: Text(_isEditing ? 'Editar usuario' : 'Agregar usuario'),
-        backgroundColor: AppTheme.primary,
-        foregroundColor: Colors.white,
-        elevation: 0,
+        // Se eliminaron backgroundColor, foregroundColor y elevation fijos
+        // Ahora tomará los definidos en el appBarTheme de tu core/theme/theme.dart
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -141,7 +140,6 @@ class _UserFormScreenState extends State<UserFormScreen> {
               DropdownButtonFormField<String>(
                 initialValue: _selectedRole,
                 decoration: const InputDecoration(
-                  //labelText: 'Rol',
                   prefixIcon: Icon(Icons.work),
                 ),
                 items: _roles.map((role) => DropdownMenuItem(
@@ -180,7 +178,8 @@ class _UserFormScreenState extends State<UserFormScreen> {
               const SizedBox(height: 32),
               _isLoading
                   ? const Center(
-                      child: CircularProgressIndicator(color: AppTheme.primary))
+                      // Se eliminó el color fijo. Usará el primary del ThemeData automáticamente
+                      child: CircularProgressIndicator())
                   : ElevatedButton(
                       onPressed: _submit,
                       child: Text(_isEditing ? 'Guardar cambios' : 'Agregar usuario'),

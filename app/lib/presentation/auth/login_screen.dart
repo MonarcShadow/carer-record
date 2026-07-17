@@ -5,9 +5,9 @@ import '../../data/remote/auth_service.dart';
 import '../../data/remote/dto/auth_dto.dart';
 import '../../data/local/auth_preferences.dart';
 import 'home_screen.dart';
-import '../patients/doctor_screen.dart';
-import '../patients/nurse_screen.dart';
-import '../patients/tech_screen.dart';
+import '../profiles/doctor_screen.dart';
+import '../profiles/nurse_screen.dart';
+import '../profiles/tech_screen.dart';
 
 Widget _screenForRole(LoginResponseDto user) {
   switch (user.userRole) {

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../../core/theme/theme.dart';
 import '../../data/remote/dto/auth_dto.dart';
 import '../widgets/app_drawer.dart';
 
@@ -10,12 +9,10 @@ class NurseScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      // Se eliminó backgroundColor fijo
       appBar: AppBar(
         title: const Text('Carer Record'),
-        backgroundColor: AppTheme.primary,
-        foregroundColor: Colors.white,
-        elevation: 0,
+        // Se eliminaron backgroundColor, foregroundColor y elevation fijos
       ),
       drawer: AppDrawer(user: user),
       body: _buildPanel(context),
@@ -28,9 +25,9 @@ class NurseScreen extends StatelessWidget {
       child: Column(
         children: [
           const SizedBox(height: 16),
-          _avatar(),
+          _avatar(context), // Pasamos el context para acceder al tema
           const SizedBox(height: 16),
-          _userName(),
+          _userName(context), // Pasamos el context para acceder al tema
           const SizedBox(height: 32),
           GridView.count(
             crossAxisCount: 2,
@@ -53,37 +50,59 @@ class NurseScreen extends StatelessWidget {
     );
   }
 
-  Widget _avatar() {
+  Widget _avatar(BuildContext context) {
+    final theme = Theme.of(context);
     final parts = user.userName.trim().split(' ');
     final initials = parts.length >= 2
         ? '${parts[0][0]}${parts[1][0]}'.toUpperCase()
-        : user.userName[0].toUpperCase();
+        : user.userName.isNotEmpty ? user.userName[0].toUpperCase() : 'EN';
+
     return CircleAvatar(
       radius: 48,
-      backgroundColor: AppTheme.primary,
-      child: Text(initials,
-          style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold)),
+      backgroundColor: theme.colorScheme.primary,
+      child: Text(
+        initials,
+        style: TextStyle(
+          color: theme.colorScheme.onPrimary, 
+          fontSize: 36, 
+          fontWeight: FontWeight.bold
+        ),
+      ),
     );
   }
 
-  Widget _userName() {
+  Widget _userName(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Column(
       children: [
-        Text(user.userName,
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppTheme.textPrimary)),
+        Text(
+          user.userName,
+          style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)
+        ),
         const SizedBox(height: 4),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
           decoration: BoxDecoration(
-            color: AppTheme.primary.withValues(alpha: 0.1),
+            color: theme.colorScheme.primary.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(20),
           ),
-          child: const Text('Enfermería',
-              style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w600, fontSize: 13)),
+          child: Text(
+            'Enfermería',
+            style: TextStyle(
+              color: theme.colorScheme.primary, 
+              fontWeight: FontWeight.w600, 
+              fontSize: 13
+            ),
+          ),
         ),
         const SizedBox(height: 8),
-        Text(user.userEmail,
-            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+        Text(
+          user.userEmail,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.textTheme.bodySmall?.color
+          )
+        ),
       ],
     );
   }
@@ -97,27 +116,40 @@ class _ActionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: theme.cardColor, // Hereda el color correcto de la tarjeta en modo oscuro
           borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8, offset: const Offset(0, 2))],
+          boxShadow: [
+            BoxShadow(
+              color: theme.shadowColor.withValues(alpha: 0.06), 
+              blurRadius: 8, 
+              offset: const Offset(0, 2)
+            )
+          ],
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
               padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(color: AppTheme.primary.withValues(alpha: 0.1), shape: BoxShape.circle),
-              child: Icon(icon, color: AppTheme.primary, size: 28),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withValues(alpha: 0.1), 
+                shape: BoxShape.circle
+              ),
+              child: Icon(icon, color: theme.colorScheme.primary, size: 28),
             ),
             const SizedBox(height: 10),
-            Text(label,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600)
+            ),
           ],
         ),
       ),
