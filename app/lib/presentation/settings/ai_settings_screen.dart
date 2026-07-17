@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:archive/archive_io.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
-import '../../core/theme.dart';
+import '../../core/theme/theme.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../data/services/whisper_service.dart';
 import 'dart:io';

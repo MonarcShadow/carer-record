@@ -1,9 +1,16 @@
 import 'package:flutter/material.dart';
-import 'core/theme.dart';
+import 'package:provider/provider.dart';
+import 'core/theme/theme.dart';
+import 'core/theme/theme_provider.dart';
 import 'presentation/auth/login_screen.dart';
 
 void main() {
-  runApp(const CarerRecordApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => ThemeProvider(),
+      child: const CarerRecordApp(),
+    ),
+  );
 }
 
 class CarerRecordApp extends StatelessWidget {
@@ -11,10 +18,13 @@ class CarerRecordApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeProvider = context.watch<ThemeProvider>();
     return MaterialApp(
       title: 'Carer Record',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.light,
+      theme:      AppTheme.light,
+      darkTheme:  AppTheme.dark,
+      themeMode:  themeProvider.isDark ? ThemeMode.dark : ThemeMode.light,
       home: const LoginScreen(),
     );
   }

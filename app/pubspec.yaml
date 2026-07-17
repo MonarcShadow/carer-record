@@ -39,6 +39,7 @@ dependencies:
   sherpa_onnx: ^1.10.29
   record: ^7.1.1
   permission_handler: ^11.3.0
+  provider: ^6.1.0
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8

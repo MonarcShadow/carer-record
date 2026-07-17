@@ -2,7 +2,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthPreferences {
   static const _keyBiometric = 'biometric_enabled';
-  static const _keyDarkMode = 'dark_mode';
   static const _keyToken = 'auth_token';
   static const _keyUserName = 'user_name';
   static const _keyUserRole = 'user_role';
@@ -47,15 +46,5 @@ class AuthPreferences {
   static Future<void> setBiometric(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyBiometric, value);
-  }
-
-  static Future<bool> getDarkMode() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getBool(_keyDarkMode) ?? false;
-  }
-
-  static Future<void> setDarkMode(bool value) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_keyDarkMode, value);
   }
 }

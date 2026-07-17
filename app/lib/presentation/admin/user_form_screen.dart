@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../core/theme.dart';
+import '../../core/theme/theme.dart';
 import '../../data/remote/users_service.dart';
 
 class UserFormScreen extends StatefulWidget {
@@ -141,7 +141,7 @@ class _UserFormScreenState extends State<UserFormScreen> {
               DropdownButtonFormField<String>(
                 initialValue: _selectedRole,
                 decoration: const InputDecoration(
-                  labelText: 'Rol',
+                  //labelText: 'Rol',
                   prefixIcon: Icon(Icons.work),
                 ),
                 items: _roles.map((role) => DropdownMenuItem(

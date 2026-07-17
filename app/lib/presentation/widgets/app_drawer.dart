@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:local_auth/local_auth.dart';
-import '../../core/theme.dart';
+import '../../core/theme/theme.dart';
 import '../../data/local/auth_preferences.dart';
 import '../../data/remote/dto/auth_dto.dart';
 import '../auth/login_screen.dart';
 import '../settings/ai_settings_screen.dart';
-
+import 'package:provider/provider.dart';
+import '../../core/theme/theme_provider.dart';
 
 class AppDrawer extends StatefulWidget {
   final LoginResponseDto user;
@@ -19,7 +20,6 @@ class AppDrawer extends StatefulWidget {
 class _AppDrawerState extends State<AppDrawer> {
   final LocalAuthentication _localAuth = LocalAuthentication();
   bool _biometricEnabled = false;
-  bool _darkMode         = false;
   bool _hasBiometrics    = false;
 
   @override
@@ -31,10 +31,8 @@ class _AppDrawerState extends State<AppDrawer> {
 
   Future<void> _loadPreferences() async {
     final biometric = await AuthPreferences.getBiometric();
-    final darkMode  = await AuthPreferences.getDarkMode();
     setState(() {
       _biometricEnabled = biometric;
-      _darkMode         = darkMode;
     });
   }
 
@@ -165,17 +163,18 @@ class _AppDrawerState extends State<AppDrawer> {
             const Divider(indent: 16, endIndent: 16),
 
             // Modo oscuro
-            ListTile(
-              leading: const Icon(Icons.dark_mode, color: AppTheme.primary),
-              title: const Text('Modo oscuro'),
-              subtitle: const Text('Próximamente', style: TextStyle(fontSize: 12)),
-              trailing: Switch(
-                value: _darkMode,
-                activeThumbColor: AppTheme.primary,
-                onChanged: (value) async {
-                  await AuthPreferences.setDarkMode(value);
-                  setState(() => _darkMode = value);
-                },
+            Consumer<ThemeProvider>(
+              builder: (context, themeProvider, _) => ListTile(
+                leading: Icon(
+                  themeProvider.isDark ? Icons.light_mode : Icons.dark_mode,
+                  color: AppTheme.primary,
+                ),
+                title: const Text('Modo oscuro'),
+                trailing: Switch(
+                  value: themeProvider.isDark,
+                  activeThumbColor: AppTheme.primary,
+                  onChanged: (_) => themeProvider.toggle(),
+                ),
               ),
             ),
 
