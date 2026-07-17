@@ -32,7 +32,9 @@ android {
         }
     }
 }
-
+tasks.withType<JavaCompile> {
+    options.compilerArgs.add("-Xlint:-options")
+}
 kotlin {
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17

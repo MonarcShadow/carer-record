@@ -5,8 +5,11 @@ import 'package:archive/archive_io.dart';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import '../../core/theme.dart';
-
+import 'package:permission_handler/permission_handler.dart';
+import '../../data/services/whisper_service.dart';
 import 'dart:io';
+import 'dart:math' as math;
+import 'dart:async';
 
 
 enum WhisperModel {none, base, small }
@@ -19,7 +22,7 @@ class AiSettingsScreen extends StatefulWidget {
   State<AiSettingsScreen> createState() => _AiSettingsScreenState();
 }
 
-class _AiSettingsScreenState extends State<AiSettingsScreen> {
+class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerProviderStateMixin {
   // URLs de los modelos
   static const _whisperBaseUrl  = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-base.tar.bz2';
   static const _whisperSmallUrl = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-small.tar.bz2';
@@ -56,17 +59,139 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
   final _testController = TextEditingController();
   String _testResult    = '';
 
+  final WhisperService _whisperService = WhisperService();
+  bool _isRecording    = false;
+  bool _transcribing   = false;
+
+  // Animaciones para la barra de audio
+  late AnimationController _micAnimationController;
+  Timer? _waveformTimer;
+  Timer? _transcriptionTimer; // Timer para la transcripción en tiempo real
+  final List<double> _amplitudes = List.filled(20, 0.1);
+
+  String _whisperFolder() =>
+      _whisperModel == WhisperModel.base ? 'whisper-base' : 'whisper-small';
+
+  bool get _micAvailable =>
+      _whisperModel != WhisperModel.none &&
+      (_whisperModel == WhisperModel.base
+          ? _whisperBaseDownloaded
+          : _whisperSmallDownloaded);
+
+  bool get _processAvailable => _llmModel != LlmModel.none;
+
   @override
   void initState() {
     super.initState();
     _loadDownloadState();
+    _micAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
   }
 
   @override
   void dispose() {
     _testController.dispose();
+    _micAnimationController.dispose();
+    _waveformTimer?.cancel();
+    _transcriptionTimer?.cancel();
     super.dispose();
   }
+
+  void _toggleRecording() {
+    if (_isRecording) {
+      _stopAndTranscribe();
+    } else {
+      _startRecording();
+    }
+  }
+
+  Future<void> _startRecording() async {
+    final status = await Permission.microphone.request();
+    if (!status.isGranted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Permiso de micrófono denegado')),
+        );
+      }
+      return;
+    }
+    
+    // Quitar el foco del TextField para esconder el teclado al grabar
+    // Mover antes de operaciones async para evitar usar BuildContext
+    // a través de brechas async (lint: use_build_context_synchronously).
+    FocusManager.instance.primaryFocus?.unfocus();
+    
+    // NOTA: Para transcripción en streaming (tiempo real)
+    // sherpa-onnx requiere el OnlineRecognizer, no el OfflineRecognizer.
+    // Whisper en sherpa-onnx es un modelo OFFLINE (procesa lotes de audio).
+    // Para simular el "tiempo real" con un modelo offline, 
+    // lo habitual es detener y reiniciar la grabación en trozos,
+    // o cambiar a un modelo Online (ej: zipformer) si quieres verdadero streaming.
+    // 
+    // Como tu servicio actual (WhisperService) usa OfflineRecognizer con Whisper,
+    // transcribir "mientras hablas" requiere modificar el servicio
+    // para capturar el stream de audio continuamente, o aceptar 
+    // que la transcripción llegará al finalizar.
+    // 
+    // Por ahora, WhisperService requiere detener la grabación para transcribir el archivo WAV completo.
+    
+    await _whisperService.startRecording();
+    
+    setState(() {
+      _isRecording  = true;
+      _testResult   = '';
+      _testController.text = 'Escuchando...'; // Feedback visual de que está activo
+    });
+    
+    _micAnimationController.forward();
+    _startWaveformSimulation();
+  }
+
+  Future<void> _stopAndTranscribe() async {
+    _waveformTimer?.cancel();
+    _micAnimationController.reverse();
+    
+    setState(() { 
+      _isRecording = false; 
+      _transcribing = true; 
+      // Reiniciar amplitudes
+      for (int i = 0; i < _amplitudes.length; i++) {
+        _amplitudes[i] = 0.1;
+      }
+    });
+    
+    _testController.text = 'Procesando audio...';
+
+    // 1. Obtener la ruta absoluta completa donde están los modelos
+    final modelsPath = await _modelsDir();
+    final absoluteModelPath = '$modelsPath/${_whisperFolder()}';
+
+    // 2. Pasar la ruta absoluta a tu WhisperService
+    final result = await _whisperService.stopAndTranscribe(absoluteModelPath);
+
+    setState(() {
+      _transcribing = false;
+      _testController.text = result ?? '';
+      _testResult = '';
+    });
+  }
+
+  // Simula la actividad del micrófono para la animación
+  void _startWaveformSimulation() {
+    _waveformTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
+      if (!mounted) return;
+      setState(() {
+        for (int i = 0; i < _amplitudes.length; i++) {
+          // Genera valores aleatorios para simular amplitud.
+          // En una implementación real, esto vendría del nivel de decibelios del micrófono.
+          _amplitudes[i] = math.max(0.1, math.Random().nextDouble());
+        }
+      });
+    });
+  }
+
 
   Future<String> _modelsDir() async {
     final dir = await getApplicationDocumentsDirectory();
@@ -263,216 +388,361 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      body: GestureDetector(
+        // Para cerrar el teclado si se toca fuera de los inputs
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
 
-            // ── Voz a texto ───────────────────────────────────────────
-            const _SectionHeader(
-              icon: Icons.mic,
-              title: 'Voz a texto',
-              subtitle: 'Whisper — transcripción on-device sin conexión',
-            ),
-            const SizedBox(height: 12),
+              // ── Voz a texto ───────────────────────────────────────────
+              const _SectionHeader(
+                icon: Icons.mic,
+                title: 'Voz a texto',
+                subtitle: 'Whisper — transcripción on-device sin conexión',
+              ),
+              const SizedBox(height: 12),
 
-            _ModelCard(
-              title: 'Sin Notas de voz',
-              description: 'No se transcribirá audio, solo texto escrito',
-              url: _whisperBaseUrl,
-              selected: _whisperModel == WhisperModel.none,
-              downloaded: true,
-              downloading: false,
-              progress: 0,
-              statusText: '',
-              onSelect: () async {
-                setState(() => _whisperModel = WhisperModel.none);
-                await _saveDownloadState();
-              },
-              onDownload: null,
-              hideDownload: true,
-            ),
+              _ModelCard(
+                title: 'Sin Notas de voz',
+                description: 'No se transcribirá audio, solo texto escrito',
+                url: _whisperBaseUrl,
+                selected: _whisperModel == WhisperModel.none,
+                downloaded: true,
+                downloading: false,
+                progress: 0,
+                statusText: '',
+                onSelect: () async {
+                  setState(() => _whisperModel = WhisperModel.none);
+                  await _saveDownloadState();
+                },
+                onDownload: null,
+                hideDownload: true,
+              ),
 
 
-            const SizedBox(height: 12),
+              const SizedBox(height: 12),
 
-            _ModelCard(
-              title: 'Whisper Base',
-              description: '~198 MB · Mayor velocidad, menor precisión',
-              url: _whisperBaseUrl,
-              selected: _whisperModel == WhisperModel.base,
-              downloaded: _whisperBaseDownloaded,
-              downloading: _downloadingWhisperBase,
-              progress: _whisperBaseProgress,
-              statusText: _whisperBaseStatus,
-              onSelect: () async {
-                setState(() => _whisperModel = WhisperModel.base);
-                await _saveDownloadState();
-              },
-              onDownload: _downloadingWhisperBase ? null : _downloadWhisperBase,
-              onDelete: _whisperBaseDownloaded
-                  ? () => _deleteModel('whisper-base', () => setState(() => _whisperBaseDownloaded = false))
-                  : null,
-            ),
-            const SizedBox(height: 10),
-            
-            _ModelCard(
-              title: 'Whisper Small',
-              description: '~610 MB · Mayor precisión, menor velocidad',
-              url: _whisperSmallUrl,
-              selected: _whisperModel == WhisperModel.small,
-              downloaded: _whisperSmallDownloaded,
-              downloading: _downloadingWhisperSmall,
-              progress: _whisperSmallProgress,
-              statusText: _whisperSmallStatus,
-              onSelect: () async {
-                setState(() => _whisperModel = WhisperModel.small);
-                await _saveDownloadState();
-              },
-              onDownload: _downloadingWhisperSmall ? null : _downloadWhisperSmall,
-              onDelete: _whisperSmallDownloaded
-                  ? () => _deleteModel('whisper-small', () => setState(() => _whisperSmallDownloaded = false))
-                  : null,
-            ),
+              _ModelCard(
+                title: 'Whisper Base',
+                description: '~198 MB · Mayor velocidad, menor precisión',
+                url: _whisperBaseUrl,
+                selected: _whisperModel == WhisperModel.base,
+                downloaded: _whisperBaseDownloaded,
+                downloading: _downloadingWhisperBase,
+                progress: _whisperBaseProgress,
+                statusText: _whisperBaseStatus,
+                onSelect: () async {
+                  setState(() => _whisperModel = WhisperModel.base);
+                  await _saveDownloadState();
+                },
+                onDownload: _downloadingWhisperBase ? null : _downloadWhisperBase,
+                onDelete: _whisperBaseDownloaded
+                    ? () => _deleteModel('whisper-base', () => setState(() => _whisperBaseDownloaded = false))
+                    : null,
+              ),
+              const SizedBox(height: 10),
+              
+              _ModelCard(
+                title: 'Whisper Small',
+                description: '~610 MB · Mayor precisión, menor velocidad',
+                url: _whisperSmallUrl,
+                selected: _whisperModel == WhisperModel.small,
+                downloaded: _whisperSmallDownloaded,
+                downloading: _downloadingWhisperSmall,
+                progress: _whisperSmallProgress,
+                statusText: _whisperSmallStatus,
+                onSelect: () async {
+                  setState(() => _whisperModel = WhisperModel.small);
+                  await _saveDownloadState();
+                },
+                onDownload: _downloadingWhisperSmall ? null : _downloadWhisperSmall,
+                onDelete: _whisperSmallDownloaded
+                    ? () => _deleteModel('whisper-small', () => setState(() => _whisperSmallDownloaded = false))
+                    : null,
+              ),
 
-            const SizedBox(height: 32),
+              const SizedBox(height: 32),
 
-            // ── Limpieza y resumen ────────────────────────────────────
-            const _SectionHeader(
-              icon: Icons.auto_fix_high,
-              title: 'Limpieza y resumen',
-              subtitle: 'Mejora el texto transcrito para notas clínicas',
-            ),
-            const SizedBox(height: 12),
+              // ── Limpieza y resumen ────────────────────────────────────
+              const _SectionHeader(
+                icon: Icons.auto_fix_high,
+                title: 'Limpieza y resumen',
+                subtitle: 'Mejora el texto transcrito para notas clínicas',
+              ),
+              const SizedBox(height: 12),
 
-            _ModelCard(
-              title: 'Sin limpieza',
-              description: 'Usa el texto de Whisper directamente',
-              selected: _llmModel == LlmModel.none,
-              downloaded: true,
-              downloading: false,
-              progress: 0,
-              statusText: '',
-              onSelect: () async {
-                setState(() => _llmModel = LlmModel.none);
-                await _saveDownloadState();
-              },
-              onDownload: null,
-              hideDownload: true,
-            ),
-            const SizedBox(height: 10),
+              _ModelCard(
+                title: 'Sin limpieza',
+                description: 'Usa el texto de Whisper directamente',
+                selected: _llmModel == LlmModel.none,
+                downloaded: true,
+                downloading: false,
+                progress: 0,
+                statusText: '',
+                onSelect: () async {
+                  setState(() => _llmModel = LlmModel.none);
+                  await _saveDownloadState();
+                },
+                onDownload: null,
+                hideDownload: true,
+              ),
+              const SizedBox(height: 10),
 
-            _ModelCard(
-              title: 'T5 Small',
-              description: 'Medida ligera · Corrección rápida, limpieza y resumen básico',
-              url: _t5SmallUrl,
-              selected: _llmModel == LlmModel.t5Small,
-              downloaded: _t5SmallDownloaded,
-              downloading: _downloadingT5Small,
-              progress: _t5SmallProgress,
-              statusText: _t5SmallStatus,
-              onSelect: () async {
-                setState(() => _llmModel = LlmModel.t5Small);
-                await _saveDownloadState();
-              },
-              onDownload: _downloadingT5Small ? null : _downloadT5Small,
-              onDelete: _t5SmallDownloaded
-                  ? () => _deleteModel('t5-small', () => setState(() => _t5SmallDownloaded = false))
-                  : null,
-            ),
-            const SizedBox(height: 10),
+              _ModelCard(
+                title: 'T5 Small',
+                description: 'Medida ligera · Corrección rápida, limpieza y resumen básico',
+                url: _t5SmallUrl,
+                selected: _llmModel == LlmModel.t5Small,
+                downloaded: _t5SmallDownloaded,
+                downloading: _downloadingT5Small,
+                progress: _t5SmallProgress,
+                statusText: _t5SmallStatus,
+                onSelect: () async {
+                  setState(() => _llmModel = LlmModel.t5Small);
+                  await _saveDownloadState();
+                },
+                onDownload: _downloadingT5Small ? null : _downloadT5Small,
+                onDelete: _t5SmallDownloaded
+                    ? () => _deleteModel('t5-small', () => setState(() => _t5SmallDownloaded = false))
+                    : null,
+              ),
+              const SizedBox(height: 10),
 
-            _ModelCard(
-              title: 'Gemma 3 1B INT4',
-              description: '~529 MB · Limpieza clínica mas precisa.\nEs mas lento',
-              url: _gemmaUrl,
-              selected: _llmModel == LlmModel.gemma3,
-              downloaded: _gemmaDownloaded,
-              downloading: _downloadingGemma,
-              progress: _gemmaProgress,
-              statusText: _gemmaStatus,
-              onSelect: () async {
-                setState(() => _llmModel = LlmModel.gemma3);
-                await _saveDownloadState();
-              },
-              onDownload: _downloadingGemma ? null : _downloadGemma,
-              onDelete: _gemmaDownloaded
-                  ? () => _deleteModel('gemma-3', () => setState(() => _gemmaDownloaded = false))
-                  : null,
-            ),
+              _ModelCard(
+                title: 'Gemma 3 1B INT4',
+                description: '~529 MB · Limpieza clínica mas precisa.\\nEs mas lento',
+                url: _gemmaUrl,
+                selected: _llmModel == LlmModel.gemma3,
+                downloaded: _gemmaDownloaded,
+                downloading: _downloadingGemma,
+                progress: _gemmaProgress,
+                statusText: _gemmaStatus,
+                onSelect: () async {
+                  setState(() => _llmModel = LlmModel.gemma3);
+                  await _saveDownloadState();
+                },
+                onDownload: _downloadingGemma ? null : _downloadGemma,
+                onDelete: _gemmaDownloaded
+                    ? () => _deleteModel('gemma-3', () => setState(() => _gemmaDownloaded = false))
+                    : null,
+              ),
 
-            const SizedBox(height: 32),
+              const SizedBox(height: 32),
 
-            // ── Área de prueba ────────────────────────────────────────
-            const _SectionHeader(
-              icon: Icons.science,
-              title: 'Área de prueba',
-              subtitle: 'Escribe o dicta texto para probar la configuración actual',
-            ),
-            const SizedBox(height: 12),
+              // ── Área de prueba ────────────────────────────────────────
+              const _SectionHeader(
+                icon: Icons.science,
+                title: 'Área de prueba',
+                subtitle: 'Graba o escribe para probar la configuración actual',
+              ),
+              const SizedBox(height: 12),
 
-            TextField(
-              controller: _testController,
-              maxLines: 4,
-              decoration: InputDecoration(
-                hintText: 'Escribe aquí para probar el modelo seleccionado...',
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppTheme.primary, width: 2),
+              // Animación de botón de micrófono expandible
+              Center(
+                child: AnimatedBuilder(
+                  animation: _micAnimationController,
+                  builder: (context, child) {
+                    // Valores de animación
+                    final expansionValue = _micAnimationController.value;
+                    // Anchura dinámica: desde 64 (botón circular) hasta ~300 (barra expandida)
+                    final width = 64.0 + (expansionValue * 220.0);
+                    
+                    return GestureDetector(
+                      onTap: _micAvailable && !_transcribing ? _toggleRecording : null,
+                      child: Container(
+                        width: width,
+                        height: 64,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(32),
+                          color: !_micAvailable
+                              ? const Color(0xFFE5E7EB)
+                              : _isRecording
+                                  ? Colors.red.withValues(alpha: 0.1)
+                                  : AppTheme.primary,
+                          // Se elimina el borde rojo del contenedor principal para que no se vea el doble borde
+                          // border: _isRecording ? Border.all(color: Colors.red, width: 2) : null,
+                          boxShadow: _isRecording
+                              ? [BoxShadow(
+                                  color: Colors.red.withValues(alpha: 0.2),
+                                  blurRadius: 12,
+                                  spreadRadius: 2,
+                                )]
+                              : [BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.1),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                )],
+                        ),
+                        child: Stack(
+                          children: [
+                            // Contenido expandido (Onda de audio y borde exterior simulado)
+                            if (expansionValue > 0)
+                              Positioned.fill(
+                                child: Opacity(
+                                  opacity: expansionValue,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(32),
+                                      border: Border.all(color: Colors.red, width: 2), // Borde animado
+                                    ),
+                                    child: Padding(
+                                      // Padding ajustado: left 64 para saltar el circulo rojo, right 20 para espaciado
+                                      padding: const EdgeInsets.only(left: 64.0, right: 20.0), 
+                                      child: LayoutBuilder(
+                                        builder: (context, constraints) {
+                                          return Row(
+                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                            crossAxisAlignment: CrossAxisAlignment.center,
+                                            children: List.generate(_amplitudes.length, (index) {
+                                              return Flexible(
+                                                child: Padding(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 1.0),
+                                                  child: AnimatedContainer(
+                                                    duration: const Duration(milliseconds: 100),
+                                                    width: 3, 
+                                                    height: 32 * _amplitudes[index],
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.red,
+                                                      borderRadius: BorderRadius.circular(2),
+                                                    ),
+                                                  ),
+                                                ),
+                                              );
+                                            }),
+                                          );
+                                        }
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            
+                            // Icono de micrófono deslizable (El círculo sólido)
+                            Positioned(
+                              left: 0,
+                              top: 0,
+                              bottom: 0,
+                              width: 64,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: !_micAvailable
+                                      ? Colors.transparent
+                                      : _isRecording
+                                          ? Colors.red // Círculo sólido rojo
+                                          : Colors.transparent,
+                                ),
+                                child: Center(
+                                  child: Icon(
+                                    _isRecording ? Icons.stop : Icons.mic,
+                                    color: !_micAvailable 
+                                        ? Colors.grey 
+                                        : _isRecording ? Colors.white : Colors.white,
+                                    size: 28,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _runTest,
-                icon: const Icon(Icons.play_arrow),
-                label: const Text('Procesar texto'),
-              ),
-            ),
 
-            if (_testResult.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Center(
+                child: Text(
+                  !_micAvailable
+                      ? 'Descarga un modelo de voz para activar'
+                      : _isRecording
+                          ? 'Toca para detener'
+                          : _transcribing
+                              ? 'Transcribiendo...'
+                              : 'Toca para grabar',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: !_micAvailable
+                        ? AppTheme.textSecondary
+                        : _isRecording
+                            ? Colors.red
+                            : AppTheme.textSecondary,
+                  ),
+                ),
+              ),
               const SizedBox(height: 16),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: AppTheme.primary.withValues(alpha: 0.3)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Resultado:',
-                        style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.textSecondary,
-                            fontSize: 12)),
-                    const SizedBox(height: 8),
-                    Text(_testResult,
-                        style: const TextStyle(
-                            fontSize: 14, color: AppTheme.textPrimary)),
-                  ],
+
+              TextField(
+                controller: _testController,
+                maxLines: 4,
+                readOnly: _transcribing,
+                decoration: InputDecoration(
+                  hintText: 'El texto transcrito aparecerá aquí...',
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppTheme.primary, width: 2),
+                  ),
                 ),
               ),
-            ],
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _processAvailable && _testController.text.isNotEmpty && !_transcribing
+                      ? _runTest
+                      : null,
+                  icon: const Icon(Icons.auto_fix_high),
+                  label: Text(_processAvailable
+                      ? 'Limpiar con IA'
+                      : 'Selecciona un modelo de limpieza'),
+                ),
+              ),
 
-            const SizedBox(height: 32),
-          ],
+              if (_testResult.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: AppTheme.primary.withValues(alpha: 0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Resultado:',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              color: AppTheme.textSecondary,
+                              fontSize: 12)),
+                      const SizedBox(height: 8),
+                      Text(_testResult,
+                          style: const TextStyle(
+                              fontSize: 14, color: AppTheme.textPrimary)),
+                    ],
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: 32),
+            ],
+          ),
         ),
       ),
     );
@@ -500,6 +770,7 @@ void _extractTarInBackground(Map<String, String> args) {
   }
   File(tempFilePath).deleteSync();
 }
+
 // ── Widgets auxiliares ──────────────────────────────────────────────────────
 
 class _SectionHeader extends StatelessWidget {
