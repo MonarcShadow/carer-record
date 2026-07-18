@@ -22,6 +22,20 @@ class NoteCreate(BaseModel):
     transcription_source: Optional[str] = 'manual'
     audio_confirmed:      Optional[bool] = True
 
+@router.patch("/{note_id}/confirm")
+def confirm_transcription(note_id: str, db: Session = Depends(get_db)):
+    row = db.execute(
+        text("SELECT id FROM notes WHERE id = :id"), {"id": note_id}
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Nota no encontrada")
+    db.execute(
+        text("UPDATE notes SET audio_confirmed = TRUE WHERE id = :id"),
+        {"id": note_id}
+    )
+    db.commit()
+    return {"ok": True}
+
 @router.get("/audio/{note_id}")
 def download_audio(note_id: str, db: Session = Depends(get_db)):
     row = db.execute(

@@ -58,6 +58,13 @@ class NotesService {
 
   String audioUrl(String noteId) => '$_base/audio/$noteId';
 
+  Future<void> confirmTranscription(String noteId) async {
+    final res = await http.patch(Uri.parse('$_base/$noteId/confirm'));
+    if (res.statusCode != 200) {
+      throw Exception('Error al confirmar transcripción');
+    }
+  }
+
   Future<List<NoteModel>> getNotes(String patientId) async {
     final res = await http.get(Uri.parse('$_base/$patientId'));
     if (res.statusCode == 200) {

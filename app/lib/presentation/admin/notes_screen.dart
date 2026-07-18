@@ -333,35 +333,80 @@ class _NotesScreenState extends State<NotesScreen>
   Widget _buildAudioBadge(NoteModel note, bool mine, ThemeData theme) {
     final isPlaying = _playing[note.id] ?? false;
 
-    return GestureDetector(
-      onTap: () async => _toggleAudio(note),
-      child: Container(
-        margin: const EdgeInsets.only(right: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        decoration: BoxDecoration(
-          color: Colors.orange.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-            color: Colors.orange.withValues(alpha: 0.4), width: 0.5),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              isPlaying ? Icons.stop : Icons.play_arrow,
-              size: 11,
-              color: Colors.orange,
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Botón play/stop
+        GestureDetector(
+          onTap: () => _toggleAudio(note),
+          child: Container(
+            margin: const EdgeInsets.only(right: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.orange.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                  color: Colors.orange.withValues(alpha: 0.4), width: 0.5),
             ),
-            const SizedBox(width: 3),
-            const Text('escuchar audio',
-                style: TextStyle(
-                    fontSize: 9,
-                    color: Colors.orange,
-                    fontWeight: FontWeight.w500)),
-          ],
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(isPlaying ? Icons.stop : Icons.play_arrow,
+                    size: 11, color: Colors.orange),
+                const SizedBox(width: 3),
+                const Text('escuchar audio',
+                    style: TextStyle(
+                        fontSize: 9,
+                        color: Colors.orange,
+                        fontWeight: FontWeight.w500)),
+              ],
+            ),
+          ),
         ),
-      ),
+        // Botón confirmar
+        GestureDetector(
+          onTap: () => _confirmTranscription(note),
+          child: Container(
+            margin: const EdgeInsets.only(right: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.green.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                  color: Colors.green.withValues(alpha: 0.4), width: 0.5),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.check, size: 11, color: Colors.green),
+                SizedBox(width: 3),
+                Text('confirmar',
+                    style: TextStyle(
+                        fontSize: 9,
+                        color: Colors.green,
+                        fontWeight: FontWeight.w500)),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
+  }
+
+  Future<void> _confirmTranscription(NoteModel note) async {
+    try {
+      await _service.confirmTranscription(note.id);
+      // Recargar notas para reflejar audio_confirmed = true
+      await _loadNotes();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString()),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
   }
 
   Future<void> _toggleAudio(NoteModel note) async {
