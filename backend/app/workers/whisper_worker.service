@@ -1,0 +1,15 @@
+[Unit]
+Description=Carer Record — Whisper transcription worker
+After=network.target mariadb.service
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/carer-record/backend
+ExecStart=/usr/bin/python3 -m app.workers.whisper_worker
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

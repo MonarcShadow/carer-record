@@ -380,8 +380,8 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> with SingleTickerPr
               const SizedBox(height: 12),
 
               _ModelCard(
-                title: 'Sin Notas de voz',
-                description: 'No se transcribirá audio, solo texto escrito',
+                title: 'Sin modelo local',
+                description: 'El audio se enviará al servidor para transcribir.\nRequiere conexión.',
                 url: _whisperBaseUrl,
                 selected: _whisperModel == WhisperModel.none,
                 downloaded: true,

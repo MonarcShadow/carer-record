@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import '../../core/config.dart';
 
 class NoteModel {
@@ -11,6 +13,8 @@ class NoteModel {
   final String inputMethod;
   final String transcriptionSource;
   final bool   audioConfirmed;
+  final String audioStatus;    // ← nuevo: 'pending','processing','done','error', o ''
+  final String displayTime;    // ← nuevo: recorded_at ?? created_at
   final String createdAt;
 
   NoteModel({
@@ -22,6 +26,8 @@ class NoteModel {
     required this.inputMethod,
     required this.transcriptionSource,
     required this.audioConfirmed,
+    required this.audioStatus,
+    required this.displayTime,
     required this.createdAt,
   });
 
@@ -34,8 +40,12 @@ class NoteModel {
     inputMethod:          j['input_method']          as String? ?? 'text',
     transcriptionSource:  j['transcription_source']  as String? ?? 'manual',
     audioConfirmed:       (j['audio_confirmed'] as int? ?? 1) == 1,
+    audioStatus:          j['audio_status']          as String? ?? '',
+    displayTime:          j['display_time']          as String? ?? '',
     createdAt:            j['created_at']            as String? ?? '',
   );
+
+  bool get isPending => audioStatus == 'pending' || audioStatus == 'processing';
 }
 
 class NotesService {
@@ -74,6 +84,30 @@ class NotesService {
       return NoteModel.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
     }
     final detail = jsonDecode(res.body)['detail'] ?? 'Error al crear nota';
+    throw Exception(detail);
+  }
+
+  Future<NoteModel> uploadAudio({
+    required String patientId,
+    required String authorId,
+    required String recordedAt,   // ISO 8601
+    required File   audioFile,
+  }) async {
+    final req = http.MultipartRequest('POST', Uri.parse('$_base/audio'));
+    req.fields['patient_id']  = patientId;
+    req.fields['author_id']   = authorId;
+    req.fields['recorded_at'] = recordedAt;
+    req.files.add(await http.MultipartFile.fromPath(
+      'audio_file',
+      audioFile.path,
+      contentType: MediaType('audio', 'wav'),
+    ));
+    final streamed = await req.send();
+    final res      = await http.Response.fromStream(streamed);
+    if (res.statusCode == 201) {
+      return NoteModel.fromJson(jsonDecode(utf8.decode(res.bodyBytes)));
+    }
+    final detail = jsonDecode(res.body)['detail'] ?? 'Error al subir audio';
     throw Exception(detail);
   }
 }

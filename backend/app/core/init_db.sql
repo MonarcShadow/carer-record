@@ -66,16 +66,19 @@ CREATE TABLE IF NOT EXISTS notes (
     id                   VARCHAR(36)  PRIMARY KEY,
     patient_id           VARCHAR(36)  NOT NULL,
     author_id            VARCHAR(36)  NOT NULL,
+    recorded_at          TIMESTAMP    NULL,                          -- ← nuevo: hora de grabación
     content              TEXT         NOT NULL,
     input_method         ENUM('text','voice') NOT NULL DEFAULT 'text',
     synced_at            TIMESTAMP    NULL,
     created_at           TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     audio_path           VARCHAR(500) NULL,
+    audio_status         ENUM('pending','processing','done','error') NULL,  -- ← nuevo: estado cola
     transcription_source ENUM('manual','auto_whisper') NOT NULL DEFAULT 'manual',
-    audio_confirmed      BOOLEAN NOT NULL DEFAULT TRUE,      
+    audio_confirmed      BOOLEAN      NOT NULL DEFAULT TRUE,
     FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
     FOREIGN KEY (author_id)  REFERENCES users(id),
-    INDEX idx_patient_time (patient_id, created_at DESC)
+    INDEX idx_patient_time   (patient_id, recorded_at DESC),
+    INDEX idx_audio_pending  (audio_status)                          -- ← para que el worker encuentre rápido los pendientes
 ) ENGINE=InnoDB;
 
 -- ------------------------------------------------------------

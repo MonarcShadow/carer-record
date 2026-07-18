@@ -97,6 +97,7 @@ class _LoginScreenState extends State<LoginScreen> {
             LoginResponseDto(
               accessToken: session['token']!,
               tokenType:   'bearer',
+              userId:      session['userId'] ?? '',
               userName:    session['userName'] ?? '',
               userRole:    session['userRole'] ?? '',
               userEmail:   session['userEmail'] ?? '',
@@ -119,6 +120,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       await AuthPreferences.saveSession(
         token:     response.accessToken,
+        userId:    response.userId,
         userName:  response.userName,
         userRole:  response.userRole,
         userEmail: response.userEmail,

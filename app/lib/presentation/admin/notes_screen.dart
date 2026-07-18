@@ -6,6 +6,10 @@ import '../../core/theme/theme.dart';
 import '../../data/remote/dto/auth_dto.dart';
 import '../../data/remote/notes_service.dart';
 import '../../data/services/whisper_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
+import '../settings/ai_settings_screen.dart'; // para los enums WhisperModel / LlmModel
 
 class NotesScreen extends StatefulWidget {
   final String          patientId;
@@ -30,6 +34,17 @@ class _NotesScreenState extends State<NotesScreen>
   final TextEditingController _inputCtrl = TextEditingController();
   final ScrollController      _scrollCtrl = ScrollController();
 
+  // ── Estado AI leído de SharedPreferences ──────────────────────────────────
+  WhisperModel _whisperModel      = WhisperModel.none;
+  LlmModel     _llmModel          = LlmModel.none;
+  bool         _whisperDownloaded = false;
+  String       _modelsPath        = '';
+
+  bool get _micAvailable =>
+      _whisperModel != WhisperModel.none && _whisperDownloaded;
+
+  bool get _aiAvailable => _llmModel != LlmModel.none;
+
   List<NoteModel> _notes   = [];
   bool    _loading          = true;
   bool    _sending          = false;
@@ -38,9 +53,12 @@ class _NotesScreenState extends State<NotesScreen>
   // Micrófono
   bool   _isRecording  = false;
   bool   _transcribing = false;
+  bool   _uploadingAudio = false;
   late AnimationController _micAnim;
   Timer? _waveformTimer;
+  Timer? _pollTimer;
   final List<double> _amplitudes = List.filled(20, 0.1);
+  DateTime? _recordingStarted;
 
   // IA (simulación por ahora, igual que en AiSettingsScreen)
   bool   _processingAi = false;
@@ -52,7 +70,9 @@ class _NotesScreenState extends State<NotesScreen>
       vsync: this,
       duration: const Duration(milliseconds: 300),
     );
+    _loadAiState();
     _loadNotes();
+    _startPollingIfNeeded();
   }
 
   @override
@@ -61,18 +81,76 @@ class _NotesScreenState extends State<NotesScreen>
     _scrollCtrl.dispose();
     _micAnim.dispose();
     _waveformTimer?.cancel();
+    _pollTimer?.cancel();
     super.dispose();
   }
 
   // ── Carga ──────────────────────────────────────────────────────────────────
+  Future<void> _loadAiState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final documentsDir = await getApplicationDocumentsDirectory();
+    final path = '${documentsDir.path}/models';
+    final modelsDir = Directory(path);
+    if (!modelsDir.existsSync()) {
+      modelsDir.createSync(recursive: true);
+    }
+
+    final whisperIndex = prefs.getInt('whisper_model') ?? 0;
+    final wModel = WhisperModel.values[whisperIndex];
+
+    bool downloaded = false;
+    if (wModel == WhisperModel.base) {
+      downloaded = File('$path/whisper-base/base-encoder.onnx').existsSync() &&
+                   File('$path/whisper-base/base-decoder.onnx').existsSync() &&
+                   File('$path/whisper-base/base-tokens.txt').existsSync();
+    } else if (wModel == WhisperModel.small) {
+      downloaded = File('$path/whisper-small/small-encoder.onnx').existsSync() &&
+                   File('$path/whisper-small/small-decoder.onnx').existsSync() &&
+                   File('$path/whisper-small/small-tokens.txt').existsSync();
+    }
+
+    final llmIndex = prefs.getInt('llm_model') ?? 0;
+    final lModel = (llmIndex >= 0 && llmIndex < LlmModel.values.length)
+        ? LlmModel.values[llmIndex]
+        : LlmModel.none;
+
+    if (!mounted) return;
+
+    setState(() {
+      _whisperModel = wModel;
+      _whisperDownloaded = downloaded;
+      _llmModel = lModel;
+      _modelsPath = path;
+    });
+  }
+
   Future<void> _loadNotes() async {
-    setState(() { _loading = true; _error = null; });
+    final showInitialLoading = _notes.isEmpty;
+    setState(() {
+      if (showInitialLoading) {
+        _loading = true;
+      }
+      _error = null;
+    });
     try {
       final notes = await _service.getNotes(widget.patientId);
       setState(() { _notes = notes; _loading = false; });
       _scrollToBottom();
+      _startPollingIfNeeded();
     } catch (e) {
       setState(() { _error = e.toString(); _loading = false; });
+    }
+  }
+
+  void _startPollingIfNeeded() {
+    _pollTimer?.cancel();
+    if (_notes.any((n) => n.isPending)) {
+      _pollTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
+        await _loadNotes();
+        if (!_notes.any((n) => n.isPending)) {
+          _pollTimer?.cancel();
+        }
+      });
     }
   }
 
@@ -100,7 +178,8 @@ class _NotesScreenState extends State<NotesScreen>
         content:   text,
         inputMethod: _wasVoice ? 'voice' : 'text',
         transcriptionSource: _wasVoice ? 'auto_whisper' : 'manual',
-        audioConfirmed: _wasVoice ? false : true,
+        audioConfirmed: true,  // siempre true cuando se envía texto, sea escrito o transcrito por Whisper local
+                               // false se reserva para cuando el servidor transcriba audio sin revisión del usuario
       );
       _inputCtrl.clear();
       _wasVoice = false;
@@ -121,7 +200,11 @@ class _NotesScreenState extends State<NotesScreen>
   // ── Micrófono ──────────────────────────────────────────────────────────────
   Future<void> _toggleMic() async {
     if (_isRecording) {
-      await _stopAndTranscribe();
+      if (_micAvailable) {
+        await _stopAndTranscribe();
+      } else {
+        await _stopAndUpload();
+      }
     } else {
       await _startRecording();
     }
@@ -140,6 +223,7 @@ class _NotesScreenState extends State<NotesScreen>
     }
     FocusManager.instance.primaryFocus?.unfocus();
     await _whisperService.startRecording();
+    _recordingStarted = DateTime.now();
     setState(() {
       _isRecording = true;
       _inputCtrl.text = 'Escuchando...';
@@ -156,18 +240,64 @@ class _NotesScreenState extends State<NotesScreen>
       });
   }
 
+    Future<void> _stopAndUpload() async {
+      _waveformTimer?.cancel();
+      _micAnim.reverse();
+      final recordedAt = _recordingStarted ?? DateTime.now();
+      setState(() {
+        _isRecording = false;
+        _uploadingAudio = true;
+        for (int i = 0; i < _amplitudes.length; i++) {
+          _amplitudes[i] = 0.1;
+        }
+      });
+      _inputCtrl.text = 'Enviando audio al servidor...';
+
+      try {
+        final audioFile = await _whisperService.stopAndGetFile();
+        if (audioFile == null) {
+          throw Exception('No se pudo recuperar el audio grabado');
+        }
+        final note = await _service.uploadAudio(
+          patientId:  widget.patientId,
+          authorId:   widget.currentUser.userId,
+          recordedAt: recordedAt.toIso8601String(),
+          audioFile:  audioFile,
+        );
+        _inputCtrl.clear();
+        setState(() {
+          _notes.add(note);
+          _uploadingAudio = false;
+        });
+        _scrollToBottom();
+      } catch (e) {
+        setState(() => _uploadingAudio = false);
+        _inputCtrl.clear();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.toString()),
+                backgroundColor: Theme.of(context).colorScheme.error),
+          );
+        }
+      }
+    }
+
   Future<void> _stopAndTranscribe() async {
     _waveformTimer?.cancel();
     _micAnim.reverse();
     setState(() {
       _isRecording  = false;
       _transcribing = true;
-      for (int i = 0; i < _amplitudes.length; i++) _amplitudes[i] = 0.1;
+      for (int i = 0; i < _amplitudes.length; i++) {
+        _amplitudes[i] = 0.1;
+      }
     });
     _inputCtrl.text = 'Procesando audio...';
 
-    // TODO: pasar el path real del modelo seleccionado igual que en AiSettingsScreen
-    final result = await _whisperService.stopAndTranscribe('');
+    final folder = _whisperModel == WhisperModel.base
+        ? 'whisper-base'
+        : 'whisper-small';
+    final result = await _whisperService.stopAndTranscribe('$_modelsPath/$folder');
     setState(() {
       _transcribing = false;
       _wasVoice = true;
@@ -236,7 +366,7 @@ class _NotesScreenState extends State<NotesScreen>
   Widget build(BuildContext context) {
     final theme  = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final busy   = _transcribing || _processingAi;
+    final busy   = _transcribing || _processingAi || _uploadingAudio;
 
     return Scaffold(
       appBar: AppBar(
@@ -404,6 +534,35 @@ class _NotesScreenState extends State<NotesScreen>
                                   color: Colors.orange,
                                   fontWeight: FontWeight.w500)),
                         ),
+                      if (note.isPending)
+                        Container(
+                          margin: const EdgeInsets.only(right: 6),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const SizedBox(
+                                width: 8,
+                                height: 8,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 1.5,
+                                  color: Colors.blue,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              const Text('transcribiendo...',
+                                  style: TextStyle(
+                                      fontSize: 9,
+                                      color: Colors.blue,
+                                      fontWeight: FontWeight.w500)),
+                            ],
+                          ),
+                        ),
                       if (note.inputMethod == 'voice')
                         Padding(
                           padding: const EdgeInsets.only(right: 4),
@@ -414,7 +573,7 @@ class _NotesScreenState extends State<NotesScreen>
                                   : theme.textTheme.bodySmall?.color
                                         ?.withValues(alpha: 0.5)),
                         ),
-                      Text(_fmtTime(note.createdAt),
+                        Text(_fmtTime(note.displayTime),
                           style: TextStyle(
                               fontSize: 10,
                               color: mine
@@ -486,6 +645,30 @@ class _NotesScreenState extends State<NotesScreen>
               ),
             ),
 
+          if (!_isRecording && !busy)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
+              child: Row(
+                children: [
+                  Icon(
+                    _micAvailable ? Icons.phone_android : Icons.cloud_upload,
+                    size: 10,
+                    color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.4),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _micAvailable
+                        ? 'Transcripción local'
+                        : 'Transcripción en servidor',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 10,
+                      color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.4),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -495,7 +678,7 @@ class _NotesScreenState extends State<NotesScreen>
                   controller: _inputCtrl,
                   maxLines: 4,
                   minLines: 1,
-                  readOnly: _isRecording || _transcribing || _processingAi,
+                  readOnly: _isRecording || _transcribing || _processingAi || _uploadingAudio,
                   onChanged: (_) => setState(() {}),
                   decoration: InputDecoration(
                     hintText: busy ? null : 'Escribe una nota...',
@@ -512,7 +695,11 @@ class _NotesScreenState extends State<NotesScreen>
                 color: _isRecording
                     ? theme.colorScheme.error
                     : AppTheme.primary,
-                tooltip: _isRecording ? 'Detener' : 'Grabar nota de voz',
+                tooltip: _isRecording
+                    ? 'Detener grabación'
+                    : _micAvailable
+                        ? 'Grabar nota de voz (Whisper local)'
+                        : 'Grabar y enviar al servidor para transcribir',
                 onTap: (busy && !_isRecording) ? null : _toggleMic,
               ),
               const SizedBox(width: 6),
@@ -520,11 +707,13 @@ class _NotesScreenState extends State<NotesScreen>
               // Botón IA
               _InputIconButton(
                 icon: Icons.auto_fix_high,
-                color: AppTheme.primary,
-                tooltip: 'Limpiar con IA',
+                color: _aiAvailable ? AppTheme.primary : theme.disabledColor,
+                tooltip: _aiAvailable
+                  ? 'Limpiar con IA'
+                  : 'Selecciona un modelo de limpieza en Configuración IA',
                 loading: _processingAi,
-                onTap: (busy || _isRecording ||
-                        _inputCtrl.text.trim().isEmpty)
+                onTap: (!_aiAvailable || busy || _isRecording ||
+                    _inputCtrl.text.trim().isEmpty)
                     ? null
                     : _runAi,
               ),

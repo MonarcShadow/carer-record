@@ -92,6 +92,12 @@ class WhisperService {
     }
   }
 
+  Future<File?> stopAndGetFile() async {
+    final path = await _recorder.stop();
+    if (path == null) return null;
+    return File(path);
+  }
+
   Future<bool> isRecording() => _recorder.isRecording();
 
   Future<void> cancelRecording() async {
