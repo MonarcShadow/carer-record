@@ -4,6 +4,7 @@ import '../admin/user_form_screen.dart';
 import '../../core/theme/theme.dart';
 import '../../data/remote/dto/auth_dto.dart';
 import '../widgets/app_drawer.dart';
+import '../admin/patients_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final LoginResponseDto user;
@@ -91,7 +92,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 _ActionCard(icon: Icons.people,         label: 'Gestionar usuarios',
                   onTap: () async => Navigator.push(context,
                     MaterialPageRoute(builder: (_) => const UsersScreen()))),
-                _ActionCard(icon: Icons.local_hospital, label: 'Pacientes',     onTap: () {}),
+                _ActionCard(icon: Icons.local_hospital, label: 'Pacientes',
+                  onTap: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const PatientsScreen()),),),
                 _ActionCard(icon: Icons.bar_chart,      label: 'Estadísticas',  onTap: () {}),
                 _ActionCard(icon: Icons.settings,       label: 'Configuración', onTap: () {}),
                 _ActionCard(icon: Icons.mic,            label: 'Comando de voz',onTap: () {}),
@@ -114,6 +117,7 @@ class _ActionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return InkWell(
       onTap: onTap,
@@ -122,12 +126,27 @@ class _ActionCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: colorScheme.surface,
           borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.08)
+                : Colors.black.withValues(alpha: 0.04),
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.6),
-              blurRadius: 8,
+              color: isDark
+                  ? Colors.black.withValues(alpha: 0.7)
+                  : Colors.black.withValues(alpha: 0.14),
+              blurRadius: isDark ? 18 : 10,
+              spreadRadius: isDark ? 0.5 : 0,
               offset: const Offset(0, 2),
             ),
+            if (isDark)
+              BoxShadow(
+                color: Colors.white.withValues(alpha: 0.05),
+                blurRadius: 12,
+                spreadRadius: 1,
+                offset: const Offset(0, -1),
+              ),
           ],
         ),
         child: Column(

@@ -117,20 +117,35 @@ class _ActionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
         decoration: BoxDecoration(
-          color: theme.cardColor, // Hereda el color correcto de la tarjeta en modo oscuro
+          color: theme.cardColor,
           borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.08)
+                : Colors.black.withValues(alpha: 0.04),
+          ),
           boxShadow: [
             BoxShadow(
-              color: theme.shadowColor.withValues(alpha: 0.06), 
-              blurRadius: 8, 
-              offset: const Offset(0, 2)
-            )
+              color: isDark
+                  ? Colors.black.withValues(alpha: 0.6)
+                  : Colors.black.withValues(alpha: 0.12),
+              blurRadius: isDark ? 18 : 8,
+              offset: const Offset(0, 2),
+            ),
+            if (isDark)
+              BoxShadow(
+                color: Colors.white.withValues(alpha: 0.06),
+                blurRadius: 12,
+                spreadRadius: 1,
+                offset: const Offset(0, -1),
+              ),
           ],
         ),
         child: Column(

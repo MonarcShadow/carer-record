@@ -5,6 +5,7 @@ from sqlalchemy import text
 
 from app.api.v1.routes.auth import router as auth_router
 from app.api.v1.routes.users import router as users_router
+from app.api.v1.routes.patients import router as patients_router
 
 
 app = FastAPI(
@@ -15,6 +16,7 @@ app = FastAPI(
 
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(users_router, prefix="/api/v1/users", tags=["users"])
+app.include_router(patients_router, prefix="/api/v1/patients", tags=["patients"])
 
 @app.get("/")
 def root():
