@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../data/remote/patients_service.dart';
 import '../../core/theme/theme.dart';
+import 'patient_detail_screen.dart';
+
 
 class PatientsScreen extends StatefulWidget {
   const PatientsScreen({super.key});
@@ -96,7 +98,6 @@ class _PatientsScreenState extends State<PatientsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme  = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
       appBar: AppBar(
@@ -287,7 +288,15 @@ class _PatientsScreenState extends State<PatientsScreen> {
                                           .withValues(alpha: 0.5),
                                     ),
                                     onTap: () {
-                                      // todo : navegar a detalle del paciente
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => PatientDetailScreen(
+                                            patientId: p.id,
+                                            patientName: p.fullName,
+                                          ),
+                                        ),
+                                      );
                                     },
                                   ),
                                 );
