@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 import '../settings/ai_settings_screen.dart'; // para los enums WhisperModel / LlmModel
+import 'package:audioplayers/audioplayers.dart';
 
 class NotesScreen extends StatefulWidget {
   final String          patientId;
@@ -59,6 +60,8 @@ class _NotesScreenState extends State<NotesScreen>
   Timer? _pollTimer;
   final List<double> _amplitudes = List.filled(20, 0.1);
   DateTime? _recordingStarted;
+  final Map<String, AudioPlayer> _players = {};
+  final Map<String, bool> _playing = {};
 
   // IA (simulación por ahora, igual que en AiSettingsScreen)
   bool   _processingAi = false;
@@ -82,6 +85,7 @@ class _NotesScreenState extends State<NotesScreen>
     _micAnim.dispose();
     _waveformTimer?.cancel();
     _pollTimer?.cancel();
+    for (final p in _players.values) { p.dispose(); }
     super.dispose();
   }
 
@@ -145,7 +149,7 @@ class _NotesScreenState extends State<NotesScreen>
   void _startPollingIfNeeded() {
     _pollTimer?.cancel();
     if (_notes.any((n) => n.isPending)) {
-      _pollTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
+      _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
         await _loadNotes();
         if (!_notes.any((n) => n.isPending)) {
           _pollTimer?.cancel();
@@ -270,6 +274,7 @@ class _NotesScreenState extends State<NotesScreen>
           _uploadingAudio = false;
         });
         _scrollToBottom();
+        _startPollingIfNeeded();
       } catch (e) {
         setState(() => _uploadingAudio = false);
         _inputCtrl.clear();
@@ -323,6 +328,67 @@ class _NotesScreenState extends State<NotesScreen>
             'Limpieza con IA pendiente de integrar el modelo')),
       );
     }
+  }
+
+  Widget _buildAudioBadge(NoteModel note, bool mine, ThemeData theme) {
+    final isPlaying = _playing[note.id] ?? false;
+
+    return GestureDetector(
+      onTap: () async => _toggleAudio(note),
+      child: Container(
+        margin: const EdgeInsets.only(right: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: Colors.orange.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: Colors.orange.withValues(alpha: 0.4), width: 0.5),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isPlaying ? Icons.stop : Icons.play_arrow,
+              size: 11,
+              color: Colors.orange,
+            ),
+            const SizedBox(width: 3),
+            const Text('escuchar audio',
+                style: TextStyle(
+                    fontSize: 9,
+                    color: Colors.orange,
+                    fontWeight: FontWeight.w500)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _toggleAudio(NoteModel note) async {
+    final isPlaying = _playing[note.id] ?? false;
+
+    if (isPlaying) {
+      await _players[note.id]?.stop();
+      setState(() => _playing[note.id] = false);
+      return;
+    }
+
+    for (final entry in _players.entries) {
+      if (entry.key != note.id) {
+        await entry.value.stop();
+        _playing[entry.key] = false;
+      }
+    }
+
+    final player = _players.putIfAbsent(note.id, () => AudioPlayer());
+    final url = _service.audioUrl(note.id);
+
+    player.onPlayerComplete.listen((_) {
+      if (mounted) setState(() => _playing[note.id] = false);
+    });
+
+    await player.play(UrlSource(url));
+    setState(() => _playing[note.id] = true);
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -518,22 +584,9 @@ class _NotesScreenState extends State<NotesScreen>
                     mainAxisSize: MainAxisSize.min,
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      // Badge transcripción sin confirmar
+                      // Badge de audio para notas no confirmadas
                       if (!note.audioConfirmed)
-                        Container(
-                          margin: const EdgeInsets.only(right: 6),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 5, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: const Text('transcripción sin confirmar',
-                              style: TextStyle(
-                                  fontSize: 9,
-                                  color: Colors.orange,
-                                  fontWeight: FontWeight.w500)),
-                        ),
+                        _buildAudioBadge(note, mine, theme),
                       if (note.isPending)
                         Container(
                           margin: const EdgeInsets.only(right: 6),

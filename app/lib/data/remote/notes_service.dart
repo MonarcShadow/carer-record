@@ -16,6 +16,8 @@ class NoteModel {
   final String audioStatus;    // ← nuevo: 'pending','processing','done','error', o ''
   final String displayTime;    // ← nuevo: recorded_at ?? created_at
   final String createdAt;
+  final String? audioPath;   // ← nuevo
+
 
   NoteModel({
     required this.id,
@@ -29,6 +31,8 @@ class NoteModel {
     required this.audioStatus,
     required this.displayTime,
     required this.createdAt,
+    required this.audioPath,
+
   });
 
   factory NoteModel.fromJson(Map<String, dynamic> j) => NoteModel(
@@ -43,6 +47,7 @@ class NoteModel {
     audioStatus:          j['audio_status']          as String? ?? '',
     displayTime:          j['display_time']          as String? ?? '',
     createdAt:            j['created_at']            as String? ?? '',
+    audioPath:            j['audio_path']            as String?,
   );
 
   bool get isPending => audioStatus == 'pending' || audioStatus == 'processing';
@@ -50,6 +55,8 @@ class NoteModel {
 
 class NotesService {
   final String _base = '${AppConfig.baseUrl}/api/v1/notes';
+
+  String audioUrl(String noteId) => '$_base/audio/$noteId';
 
   Future<List<NoteModel>> getNotes(String patientId) async {
     final res = await http.get(Uri.parse('$_base/$patientId'));

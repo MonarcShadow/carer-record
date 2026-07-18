@@ -6,6 +6,8 @@ from pydantic import BaseModel
 from typing import Optional
 from pathlib import Path
 import uuid, os
+from fastapi.responses import FileResponse
+
 
 router = APIRouter()
 
@@ -19,6 +21,23 @@ class NoteCreate(BaseModel):
     input_method:         Optional[str] = 'text'
     transcription_source: Optional[str] = 'manual'
     audio_confirmed:      Optional[bool] = True
+
+@router.get("/audio/{note_id}")
+def download_audio(note_id: str, db: Session = Depends(get_db)):
+    row = db.execute(
+        text("SELECT audio_path FROM notes WHERE id = :id"),
+        {"id": note_id}
+    ).fetchone()
+    if not row or not row.audio_path:
+        raise HTTPException(status_code=404, detail="Audio no encontrado")
+    path = Path(row.audio_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Archivo de audio no encontrado")
+    return FileResponse(
+        path=str(path),
+        media_type="audio/wav",
+        filename=path.name,
+    )
 
 @router.get("/{patient_id}")
 def list_notes(patient_id: str, db: Session = Depends(get_db)):
