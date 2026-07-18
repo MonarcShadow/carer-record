@@ -438,10 +438,12 @@ class _NotesScreenState extends State<NotesScreen>
     final url = _service.audioUrl(note.id);
 
     player.onPlayerComplete.listen((_) {
-      if (mounted) setState(() {
+      if (mounted) {
+        setState(() {
         _playing[note.id] = false;
         _played.add(note.id);
       });
+      }
     });
 
     await player.play(UrlSource(url));
