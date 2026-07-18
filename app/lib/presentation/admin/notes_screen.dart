@@ -62,6 +62,7 @@ class _NotesScreenState extends State<NotesScreen>
   DateTime? _recordingStarted;
   final Map<String, AudioPlayer> _players = {};
   final Map<String, bool> _playing = {};
+  final Set<String> _played = {};
 
   // IA (simulación por ahora, igual que en AiSettingsScreen)
   bool   _processingAi = false;
@@ -332,6 +333,7 @@ class _NotesScreenState extends State<NotesScreen>
 
   Widget _buildAudioBadge(NoteModel note, bool mine, ThemeData theme) {
     final isPlaying = _playing[note.id] ?? false;
+    final hasBeenPlayed = _played.contains(note.id);
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -365,25 +367,32 @@ class _NotesScreenState extends State<NotesScreen>
         ),
         // Botón confirmar
         GestureDetector(
-          onTap: () => _confirmTranscription(note),
+          onTap: hasBeenPlayed ? () => _confirmTranscription(note) : null,
           child: Container(
             margin: const EdgeInsets.only(right: 6),
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
-              color: Colors.green.withValues(alpha: 0.15),
+              color: hasBeenPlayed
+                  ? Colors.green.withValues(alpha: 0.15)
+                  : Colors.grey.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(6),
               border: Border.all(
-                  color: Colors.green.withValues(alpha: 0.4), width: 0.5),
+                  color: hasBeenPlayed
+                      ? Colors.green.withValues(alpha: 0.4)
+                      : Colors.grey.withValues(alpha: 0.3),
+                  width: 0.5),
             ),
-            child: const Row(
+                child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.check, size: 11, color: Colors.green),
-                SizedBox(width: 3),
+                    Icon(Icons.check,
+                        size: 11,
+                        color: hasBeenPlayed ? Colors.green : Colors.grey),
+                    const SizedBox(width: 3),
                 Text('confirmar',
                     style: TextStyle(
                         fontSize: 9,
-                        color: Colors.green,
+                            color: hasBeenPlayed ? Colors.green : Colors.grey,
                         fontWeight: FontWeight.w500)),
               ],
             ),
@@ -429,7 +438,10 @@ class _NotesScreenState extends State<NotesScreen>
     final url = _service.audioUrl(note.id);
 
     player.onPlayerComplete.listen((_) {
-      if (mounted) setState(() => _playing[note.id] = false);
+      if (mounted) setState(() {
+        _playing[note.id] = false;
+        _played.add(note.id);
+      });
     });
 
     await player.play(UrlSource(url));
