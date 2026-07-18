@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/theme.dart';
+import '../../data/remote/dto/auth_dto.dart';
 import '../../data/remote/patients_service.dart';
+import 'notes_screen.dart';
 
 class PatientDetailScreen extends StatefulWidget {
   final String patientId;
   final String patientName;
+  final LoginResponseDto currentUser;
 
   const PatientDetailScreen({
     super.key,
     required this.patientId,
     required this.patientName,
+    required this.currentUser,
   });
 
   @override
@@ -119,6 +123,24 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
           IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
         ],
       ),
+      floatingActionButton: _patient == null
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => NotesScreen(
+                    patientId: widget.patientId,
+                    patientName: _patient!.fullName,
+                    currentUser: widget.currentUser,
+                  ),
+                ),
+              ),
+              backgroundColor: AppTheme.primary,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.note_alt),
+              label: const Text('Notas'),
+            ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null

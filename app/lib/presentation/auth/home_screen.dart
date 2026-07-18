@@ -94,7 +94,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     MaterialPageRoute(builder: (_) => const UsersScreen()))),
                 _ActionCard(icon: Icons.local_hospital, label: 'Pacientes',
                   onTap: () => Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const PatientsScreen()),),),
+                    MaterialPageRoute(
+                      builder: (_) => PatientsScreen(user: widget.user),
+                    ),
+                  ),),
                 _ActionCard(icon: Icons.bar_chart,      label: 'Estadísticas',  onTap: () {}),
                 _ActionCard(icon: Icons.settings,       label: 'Configuración', onTap: () {}),
                 _ActionCard(icon: Icons.mic,            label: 'Comando de voz',onTap: () {}),

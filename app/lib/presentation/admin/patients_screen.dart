@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import '../../data/remote/dto/auth_dto.dart';
 import '../../data/remote/patients_service.dart';
 import '../../core/theme/theme.dart';
 import 'patient_detail_screen.dart';
 
 
 class PatientsScreen extends StatefulWidget {
-  const PatientsScreen({super.key});
+  final LoginResponseDto user;
+
+  const PatientsScreen({super.key, required this.user});
 
   @override
   State<PatientsScreen> createState() => _PatientsScreenState();
@@ -294,6 +297,7 @@ class _PatientsScreenState extends State<PatientsScreen> {
                                           builder: (_) => PatientDetailScreen(
                                             patientId: p.id,
                                             patientName: p.fullName,
+                                            currentUser: widget.user,
                                           ),
                                         ),
                                       );

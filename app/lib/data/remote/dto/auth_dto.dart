@@ -1,6 +1,7 @@
 class LoginResponseDto {
   final String accessToken;
   final String tokenType;
+  final String userId;      // ← nuevo
   final String userName;
   final String userRole;
   final String userEmail;
@@ -8,6 +9,7 @@ class LoginResponseDto {
   LoginResponseDto({
     required this.accessToken,
     required this.tokenType,
+    required this.userId,
     required this.userName,
     required this.userRole,
     required this.userEmail,
@@ -16,10 +18,11 @@ class LoginResponseDto {
   factory LoginResponseDto.fromJson(Map<String, dynamic> json) {
     return LoginResponseDto(
       accessToken: json['access_token'],
-      tokenType: json['token_type'],
-      userName: json['user_name'],
-      userRole: json['user_role'],
-      userEmail: json['user_email'],
+      tokenType:   json['token_type'],
+      userId:      json['user_id'],   // ← nuevo
+      userName:    json['user_name'],
+      userRole:    json['user_role'],
+      userEmail:   json['user_email'],
     );
   }
 }
