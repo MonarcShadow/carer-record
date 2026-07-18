@@ -11,10 +11,15 @@ from sqlalchemy import create_engine, text
 from faster_whisper import WhisperModel
 
 # ── Config ────────────────────────────────────────────────────────────────────
-DB_URL      = "mysql+pymysql://root:TU_PASSWORD@localhost/carer_record"  # ajusta
-POLL_SECS   = 5     # cada cuántos segundos revisa la cola
-MODEL_SIZE  = "medium"
-LOG_LEVEL   = logging.INFO
+from dotenv import load_dotenv
+import os
+
+load_dotenv(Path(__file__).parent.parent.parent / '.env')
+
+DB_URL    = os.getenv('DATABASE_URL')
+POLL_SECS = 5
+MODEL_SIZE = "medium"
+LOG_LEVEL  = logging.INFO
 
 logging.basicConfig(
     level=LOG_LEVEL,
