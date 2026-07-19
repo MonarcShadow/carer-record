@@ -1,12 +1,11 @@
 """
 Adaptador FHIR R4 Completo
 ==========================
-Lee bundles JSON generados por Synthea e importa pacientes,
-encuentros, condiciones, medicamentos, observaciones y alergias
-a la base de datos normalizada de Carer Record.
+Lee bundles JSON generados por Synthea o descargados desde HAPI FHIR
+e importa todos los recursos clínicos a la base de datos de Carer Record.
 
 Uso:
-    python fhir_adapter.py --input ./integration/test_data/fhir/
+    python fhir_adapter.py --input ./fhir/
 
 Requisitos:
     pip install mysql-connector-python
@@ -28,6 +27,14 @@ DB_CONFIG = {
     "user":     "admin",
     "password": "admin",
     "database": "carer_record",
+}
+
+# URLs de extensiones FHIR de ubicación hospitalaria
+# Deben coincidir con las que agrega enrich_patients.py en el PC
+EXTENSION_URLS = {
+    "ward":           "urn:hospital-simulado:fhir:ward",
+    "bed_number":     "urn:hospital-simulado:fhir:bed-number",
+    "admission_date": "urn:hospital-simulado:fhir:admission-date",
 }
 
 logging.basicConfig(
@@ -171,12 +178,39 @@ def _extract_patient_extended(res: dict) -> dict:
         "deceased_date":  deceased_date,
     }
 
+
 def _extract_location(entries: list, patient_ext_id: str) -> dict:
     """
-    Busca el encuentro más reciente del paciente y extrae ubicación.
-    En datos reales: 'Sala UCI - Cama 3' → ward='UCI', bed_number='3'
-    En Synthea: nombre del establecimiento → ward=display, bed_number=None
+    Lee ward, bed_number y admission_date desde las extensiones del recurso Patient
+    agregadas por enrich_patients.py. Fallback al Encounter más reciente.
     """
+    # Prioridad: extensiones del Patient
+    for entry in entries:
+        res = entry.get("resource", {})
+        if res.get("resourceType") != "Patient":
+            continue
+        if res.get("id") != patient_ext_id:
+            continue
+
+        ward = bed_number = admission_date = None
+
+        for ext in res.get("extension", []):
+            url = ext.get("url", "")
+            if url == EXTENSION_URLS["ward"]:
+                ward = ext.get("valueString")
+            elif url == EXTENSION_URLS["bed_number"]:
+                bed_number = ext.get("valueString")
+            elif url == EXTENSION_URLS["admission_date"]:
+                admission_date = _datetime(ext.get("valueDateTime"))
+
+        if ward:
+            return {
+                "ward":           ward,
+                "bed_number":     _truncate(bed_number, 20) if bed_number else None,
+                "admission_date": admission_date,
+            }
+
+    # Fallback: Encounter más reciente
     latest_encounter = None
     latest_date      = None
 
@@ -184,9 +218,7 @@ def _extract_location(entries: list, patient_ext_id: str) -> dict:
         res = entry.get("resource", {})
         if res.get("resourceType") != "Encounter":
             continue
-        pat_ref = _extract_ref_id(
-            res.get("subject", {}).get("reference", "")
-        )
+        pat_ref = _extract_ref_id(res.get("subject", {}).get("reference", ""))
         if pat_ref != patient_ext_id:
             continue
         locations = res.get("location", [])
@@ -195,18 +227,17 @@ def _extract_location(entries: list, patient_ext_id: str) -> dict:
         period    = res.get("period", {})
         start_str = period.get("start", "")
         if start_str and (latest_date is None or start_str > latest_date):
-            latest_date     = start_str
+            latest_date      = start_str
             latest_encounter = res
 
     if not latest_encounter:
         return {"ward": None, "bed_number": None, "admission_date": None}
 
-    display = latest_encounter["location"][0].get("location", {}).get("display", "")
-    period  = latest_encounter.get("period", {})
-
-    # Intentar parsear formato "Sala X - Cama Y" de sistemas reales
+    display    = latest_encounter["location"][0].get("location", {}).get("display", "")
+    period     = latest_encounter.get("period", {})
     ward       = None
     bed_number = None
+
     if " - Cama " in display:
         parts      = display.split(" - Cama ")
         ward       = parts[0].replace("Sala ", "").strip()
@@ -219,18 +250,27 @@ def _extract_location(entries: list, patient_ext_id: str) -> dict:
         "bed_number":     _truncate(bed_number, 20) if bed_number else None,
         "admission_date": _datetime(period.get("start")),
     }
+
+
 # ── Importación ───────────────────────────────────────────────────────────────
 
 def import_bundle(conn, bundle_path: Path) -> dict:
     stats = {
-        "patients":     0,
-        "encounters":   0,
-        "conditions":   0,
-        "medications":  0,
-        "observations": 0,
-        "allergies":    0,
-        "skipped":      0,
-        "errors":       0,
+        "patients":          0,
+        "encounters":        0,
+        "conditions":        0,
+        "medications":       0,
+        "observations":      0,
+        "allergies":         0,
+        "procedures":        0,
+        "immunizations":     0,
+        "diagnostic_reports":0,
+        "imaging_studies":   0,
+        "care_plans":        0,
+        "care_teams":        0,
+        "devices":           0,
+        "skipped":           0,
+        "errors":            0,
     }
     cursor = conn.cursor()
 
@@ -240,7 +280,7 @@ def import_bundle(conn, bundle_path: Path) -> dict:
     entries     = bundle.get("entry", [])
     patient_map = {}
 
-    # ── PASO 1: Pacientes ──────────────────────────────────────────────────
+    # ── PASO 1: Pacientes ──────────────────────────────────────────────────────
     for entry in entries:
         res = entry.get("resource", {})
         if res.get("resourceType") != "Patient":
@@ -302,7 +342,6 @@ def import_bundle(conn, bundle_path: Path) -> dict:
                     location["admission_date"],
                 ),
             )
-
             cursor.execute(
                 """
                 INSERT IGNORE INTO fhir_sync_log
@@ -311,7 +350,6 @@ def import_bundle(conn, bundle_path: Path) -> dict:
                 """,
                 (str(uuid.uuid4()), ext_id, bundle_path.name),
             )
-
             patient_map[ext_id] = internal_id
             stats["patients"] += 1
 
@@ -319,14 +357,20 @@ def import_bundle(conn, bundle_path: Path) -> dict:
             log.error("Error paciente %s: %s", ext_id, exc)
             stats["errors"] += 1
 
-    # ── PASO 2: Recursos clínicos ──────────────────────────────────────────
+    # ── PASO 2: Recursos clínicos ──────────────────────────────────────────────
+    CLINICAL_TYPES = {
+        "Encounter", "Condition", "MedicationRequest",
+        "Observation", "AllergyIntolerance", "Procedure",
+        "Immunization", "DiagnosticReport", "ImagingStudy",
+        "CarePlan", "CareTeam", "Device",
+    }
+
     for entry in entries:
         res    = entry.get("resource", {})
         rtype  = res.get("resourceType")
         res_id = res.get("id", str(uuid.uuid4()))
 
-        if rtype not in ("Encounter", "Condition", "MedicationRequest",
-                         "Observation", "AllergyIntolerance"):
+        if rtype not in CLINICAL_TYPES:
             continue
 
         pat_ext_id      = _patient_ref(res)
@@ -418,10 +462,9 @@ def import_bundle(conn, bundle_path: Path) -> dict:
                 dosage_list = res.get("dosageInstruction", [])
                 dosage      = dosage_list[0] if dosage_list else {}
                 requester   = res.get("requester", {})
-
-                dose_text = dosage.get("text", "")
-                timing    = dosage.get("timing", {}).get("code", {})
-                freq_text = _code_display(timing) or str(
+                dose_text   = dosage.get("text", "")
+                timing      = dosage.get("timing", {}).get("code", {})
+                freq_text   = _code_display(timing) or str(
                     dosage.get("timing", {}).get("repeat", {}).get("periodUnit", "")
                 )
 
@@ -532,6 +575,244 @@ def import_bundle(conn, bundle_path: Path) -> dict:
                 )
                 stats["allergies"] += 1
 
+            elif rtype == "Procedure":
+                performed = res.get("performedDateTime") or res.get("performedPeriod", {}).get("start")
+                performers = res.get("performer", [])
+                performer  = performers[0].get("actor", {}).get("display", "") if performers else ""
+                body_sites = res.get("bodySite", [])
+                body_site  = _code_display(body_sites[0]) if body_sites else ""
+                reasons    = res.get("reasonCode", [])
+                reason     = _code_display(reasons[0]) if reasons else ""
+
+                cursor.execute(
+                    """
+                    INSERT INTO procedures
+                        (id, patient_id, external_id,
+                         code, code_system, description,
+                         status, performed_date, performer,
+                         reason, body_site)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        str(uuid.uuid4()), internal_pat_id, res_id,
+                        _truncate(_code_value(res.get("code")), 50),
+                        _truncate(_code_system(res.get("code")), 100),
+                        _code_display(res.get("code")),
+                        _truncate(res.get("status", ""), 50),
+                        _datetime(performed),
+                        _truncate(performer, 200),
+                        _truncate(reason, 500),
+                        _truncate(body_site, 200),
+                    ),
+                )
+                stats["procedures"] += 1
+
+            elif rtype == "Immunization":
+                performers = res.get("performer", [])
+                performer  = performers[0].get("actor", {}).get("display", "") if performers else ""
+                site       = _code_display(res.get("site", {}))
+                route      = _code_display(res.get("route", {}))
+
+                cursor.execute(
+                    """
+                    INSERT INTO immunizations
+                        (id, patient_id, external_id,
+                         code, code_system, description,
+                         status, occurrence_date, lot_number,
+                         manufacturer, site, route, performer)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        str(uuid.uuid4()), internal_pat_id, res_id,
+                        _truncate(_code_value(res.get("vaccineCode", {})), 50),
+                        _truncate(_code_system(res.get("vaccineCode", {})), 100),
+                        _code_display(res.get("vaccineCode", {})),
+                        _truncate(res.get("status", ""), 50),
+                        _datetime(res.get("occurrenceDateTime")),
+                        _truncate(res.get("lotNumber", ""), 100),
+                        _truncate(res.get("manufacturer", {}).get("display", ""), 200),
+                        _truncate(site, 100),
+                        _truncate(route, 100),
+                        _truncate(performer, 200),
+                    ),
+                )
+                stats["immunizations"] += 1
+
+            elif rtype == "DiagnosticReport":
+                categories  = res.get("category", [])
+                category    = _code_display(categories[0]) if categories else ""
+                performers  = res.get("performer", [])
+                performer   = performers[0].get("display", "") if performers else ""
+                conclusions = res.get("conclusionCode", [])
+                conclusion  = _code_display(conclusions[0]) if conclusions else res.get("conclusion", "")
+
+                cursor.execute(
+                    """
+                    INSERT INTO diagnostic_reports
+                        (id, patient_id, external_id,
+                         code, code_system, description,
+                         category, status, effective_date,
+                         issued_date, performer, conclusion)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        str(uuid.uuid4()), internal_pat_id, res_id,
+                        _truncate(_code_value(res.get("code")), 50),
+                        _truncate(_code_system(res.get("code")), 100),
+                        _code_display(res.get("code")),
+                        _truncate(category, 100),
+                        _truncate(res.get("status", ""), 50),
+                        _datetime(res.get("effectiveDateTime")),
+                        _datetime(res.get("issued")),
+                        _truncate(performer, 200),
+                        _truncate(conclusion, 500) if conclusion else "",
+                    ),
+                )
+                stats["diagnostic_reports"] += 1
+
+            elif rtype == "ImagingStudy":
+                series     = res.get("series", [])
+                modalities = set()
+                instances  = 0
+                body_site  = ""
+                for s in series:
+                    mod = s.get("modality", {})
+                    if mod.get("code"):
+                        modalities.add(mod["code"])
+                    instances += len(s.get("instance", []))
+                    if not body_site:
+                        body_site = _code_display(s.get("bodySite", {}))
+
+                referrer = res.get("referrer", {}).get("display", "")
+
+                cursor.execute(
+                    """
+                    INSERT INTO imaging_studies
+                        (id, patient_id, external_id,
+                         modality, description, status,
+                         started_date, number_series, number_instances,
+                         body_site, referrer)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        str(uuid.uuid4()), internal_pat_id, res_id,
+                        _truncate(", ".join(modalities), 50),
+                        _truncate(res.get("description", ""), 500),
+                        _truncate(res.get("status", ""), 50),
+                        _datetime(res.get("started")),
+                        len(series),
+                        instances,
+                        _truncate(body_site, 200),
+                        _truncate(referrer, 200),
+                    ),
+                )
+                stats["imaging_studies"] += 1
+
+            elif rtype == "CarePlan":
+                categories = res.get("category", [])
+                category   = _code_display(categories[0]) if categories else ""
+                period     = res.get("period", {})
+
+                cursor.execute(
+                    """
+                    INSERT INTO care_plans
+                        (id, patient_id, external_id,
+                         title, description, status,
+                         intent, category, start_date, end_date)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        str(uuid.uuid4()), internal_pat_id, res_id,
+                        _truncate(res.get("title", ""), 300),
+                        res.get("description", ""),
+                        _truncate(res.get("status", ""), 50),
+                        _truncate(res.get("intent", ""), 50),
+                        _truncate(category, 200),
+                        _datetime(period.get("start")),
+                        _datetime(period.get("end")),
+                    ),
+                )
+                stats["care_plans"] += 1
+
+            elif rtype == "CareTeam":
+                categories  = res.get("category", [])
+                category    = _code_display(categories[0]) if categories else ""
+                period      = res.get("period", {})
+                care_team_id = str(uuid.uuid4())
+
+                cursor.execute(
+                    """
+                    INSERT INTO care_teams
+                        (id, patient_id, external_id,
+                         name, status, category,
+                         start_date, end_date)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        care_team_id, internal_pat_id, res_id,
+                        _truncate(res.get("name", ""), 300),
+                        _truncate(res.get("status", ""), 50),
+                        _truncate(category, 200),
+                        _datetime(period.get("start")),
+                        _datetime(period.get("end")),
+                    ),
+                )
+
+                for participant in res.get("participant", []):
+                    roles   = participant.get("role", [])
+                    role    = _code_display(roles[0]) if roles else ""
+                    member  = participant.get("member", {})
+                    m_name  = member.get("display", "")
+                    m_type  = member.get("reference", "").split("/")[0] if member.get("reference") else ""
+
+                    cursor.execute(
+                        """
+                        INSERT INTO care_team_members
+                            (id, care_team_id, patient_id,
+                             role, member_name, member_type)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            str(uuid.uuid4()), care_team_id, internal_pat_id,
+                            _truncate(role, 200),
+                            _truncate(m_name, 200),
+                            _truncate(m_type, 100),
+                        ),
+                    )
+                stats["care_teams"] += 1
+
+            elif rtype == "Device":
+                udi_carriers = res.get("udiCarrier", [])
+                udi          = udi_carriers[0].get("deviceIdentifier", "") if udi_carriers else ""
+                device_name  = res.get("deviceName", [])
+                description  = device_name[0].get("name", "") if device_name else _code_display(res.get("type", {}))
+
+                cursor.execute(
+                    """
+                    INSERT INTO devices
+                        (id, patient_id, external_id,
+                         code, code_system, description,
+                         status, manufacturer, model,
+                         lot_number, serial_number,
+                         expiration_date, udi)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        str(uuid.uuid4()), internal_pat_id, res_id,
+                        _truncate(_code_value(res.get("type", {})), 50),
+                        _truncate(_code_system(res.get("type", {})), 100),
+                        _truncate(description, 500),
+                        _truncate(res.get("status", ""), 50),
+                        _truncate(res.get("manufacturer", ""), 200),
+                        _truncate(res.get("modelNumber", ""), 200),
+                        _truncate(res.get("lotNumber", ""), 100),
+                        _truncate(res.get("serialNumber", ""), 100),
+                        _date(res.get("expirationDate")),
+                        _truncate(udi, 300),
+                    ),
+                )
+                stats["devices"] += 1
+
             cursor.execute(
                 """
                 INSERT IGNORE INTO fhir_sync_log
@@ -562,9 +843,12 @@ def run(input_dir: str):
 
     log.info("Conectando a MariaDB...")
     conn  = mysql.connector.connect(**DB_CONFIG)
-    total = {k: 0 for k in ("patients", "encounters", "conditions",
-                             "medications", "observations", "allergies",
-                             "skipped", "errors")}
+    total = {k: 0 for k in (
+        "patients", "encounters", "conditions", "medications",
+        "observations", "allergies", "procedures", "immunizations",
+        "diagnostic_reports", "imaging_studies", "care_plans",
+        "care_teams", "devices", "skipped", "errors"
+    )}
 
     for bundle_path in sorted(bundles):
         log.info("Procesando: %s", bundle_path.name)
@@ -576,7 +860,7 @@ def run(input_dir: str):
 
     log.info("\n=== Importación completa ===")
     for k, v in total.items():
-        log.info("  %-15s: %d", k.capitalize(), v)
+        log.info("  %-20s: %d", k.capitalize(), v)
 
 
 if __name__ == "__main__":
