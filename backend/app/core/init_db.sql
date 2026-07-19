@@ -236,6 +236,139 @@ CREATE TABLE IF NOT EXISTS allergies (
     INDEX idx_patient (patient_id)
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS procedures (
+    id              VARCHAR(36)  PRIMARY KEY,
+    patient_id      VARCHAR(36)  NOT NULL,
+    external_id     VARCHAR(500),
+    source_system   VARCHAR(50)  DEFAULT 'fhir',
+    code            VARCHAR(50),
+    code_system     VARCHAR(100),
+    description     TEXT,
+    status          VARCHAR(50),
+    performed_date  DATETIME,
+    performer       VARCHAR(200),
+    reason          TEXT,
+    body_site       VARCHAR(200),
+    created_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS immunizations (
+    id              VARCHAR(36)  PRIMARY KEY,
+    patient_id      VARCHAR(36)  NOT NULL,
+    external_id     VARCHAR(500),
+    source_system   VARCHAR(50)  DEFAULT 'fhir',
+    code            VARCHAR(50),
+    code_system     VARCHAR(100),
+    description     TEXT,
+    status          VARCHAR(50),
+    occurrence_date DATETIME,
+    lot_number      VARCHAR(100),
+    manufacturer    VARCHAR(200),
+    site            VARCHAR(100),
+    route           VARCHAR(100),
+    performer       VARCHAR(200),
+    created_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS diagnostic_reports (
+    id              VARCHAR(36)  PRIMARY KEY,
+    patient_id      VARCHAR(36)  NOT NULL,
+    external_id     VARCHAR(500),
+    source_system   VARCHAR(50)  DEFAULT 'fhir',
+    code            VARCHAR(50),
+    code_system     VARCHAR(100),
+    description     TEXT,
+    category        VARCHAR(100),
+    status          VARCHAR(50),
+    effective_date  DATETIME,
+    issued_date     DATETIME,
+    performer       VARCHAR(200),
+    conclusion      TEXT,
+    created_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS imaging_studies (
+    id               VARCHAR(36)  PRIMARY KEY,
+    patient_id       VARCHAR(36)  NOT NULL,
+    external_id      VARCHAR(500),
+    source_system    VARCHAR(50)  DEFAULT 'fhir',
+    modality         VARCHAR(50),
+    description      TEXT,
+    status           VARCHAR(50),
+    started_date     DATETIME,
+    number_series    INT          DEFAULT 0,
+    number_instances INT          DEFAULT 0,
+    body_site        VARCHAR(200),
+    referrer         VARCHAR(200),
+    created_at       TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS care_plans (
+    id            VARCHAR(36)  PRIMARY KEY,
+    patient_id    VARCHAR(36)  NOT NULL,
+    external_id   VARCHAR(500),
+    source_system VARCHAR(50)  DEFAULT 'fhir',
+    title         VARCHAR(300),
+    description   TEXT,
+    status        VARCHAR(50),
+    intent        VARCHAR(50),
+    category      VARCHAR(200),
+    start_date    DATETIME,
+    end_date      DATETIME,
+    created_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS care_teams (
+    id            VARCHAR(36)  PRIMARY KEY,
+    patient_id    VARCHAR(36)  NOT NULL,
+    external_id   VARCHAR(500),
+    source_system VARCHAR(50)  DEFAULT 'fhir',
+    name          VARCHAR(300),
+    status        VARCHAR(50),
+    category      VARCHAR(200),
+    start_date    DATETIME,
+    end_date      DATETIME,
+    created_at    TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS care_team_members (
+    id           VARCHAR(36)  PRIMARY KEY,
+    care_team_id VARCHAR(36)  NOT NULL,
+    patient_id   VARCHAR(36)  NOT NULL,
+    role         VARCHAR(200),
+    member_name  VARCHAR(200),
+    member_type  VARCHAR(100),
+    created_at   TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (care_team_id) REFERENCES care_teams(id) ON DELETE CASCADE,
+    FOREIGN KEY (patient_id)   REFERENCES patients(id)   ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS devices (
+    id              VARCHAR(36)  PRIMARY KEY,
+    patient_id      VARCHAR(36)  NOT NULL,
+    external_id     VARCHAR(500),
+    source_system   VARCHAR(50)  DEFAULT 'fhir',
+    code            VARCHAR(50),
+    code_system     VARCHAR(100),
+    description     TEXT,
+    status          VARCHAR(50),
+    manufacturer    VARCHAR(200),
+    model           VARCHAR(200),
+    lot_number      VARCHAR(100),
+    serial_number   VARCHAR(100),
+    expiration_date DATE,
+    udi             VARCHAR(300),
+    created_at      TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE
+);
+
+
 -- ------------------------------------------------------------
 -- Usuario de prueba
 -- Contraseña: admin (bcrypt — cambiar en producción)
