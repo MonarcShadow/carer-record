@@ -4,9 +4,216 @@ import '../../data/remote/dto/auth_dto.dart';
 import '../../data/remote/patients_service.dart';
 import 'notes_screen.dart';
 
+// ── Configuración de cada sección ─────────────────────────────────────────────
+class _SectionConfig {
+  final IconData icon;
+  final String   title;
+  // Mapeo campo_db → etiqueta en español. null = ocultar el campo.
+  final Map<String, String?> fields;
+  // Campo a usar como título de cada sub-tarjeta
+  final String? cardTitle;
+  // Campos que deben mostrarse en multilinea
+  final Set<String> multiline;
+  // Color de severidad basado en este campo
+  final String? severityField;
+
+  const _SectionConfig({
+    required this.icon,
+    required this.title,
+    required this.fields,
+    this.cardTitle,
+    this.multiline = const {},
+    this.severityField,
+  });
+}
+
+const _sectionConfigs = <String, _SectionConfig>{
+  'encounters': _SectionConfig(
+    icon: Icons.medical_services,
+    title: 'Encuentros clínicos',
+    cardTitle: 'encounter_type',
+    fields: {
+      'encounter_type':   'Tipo',
+      'status':           'Estado',
+      'encounter_class':  'Clase',
+      'start_date':       'Inicio',
+      'end_date':         'Fin',
+      'practitioner_name':'Médico',
+      'reason':           'Motivo',
+      'referral_reason':  'Derivación',
+    },
+    multiline: {'reason', 'referral_reason'},
+  ),
+  'conditions': _SectionConfig(
+    icon: Icons.healing,
+    title: 'Condiciones',
+    cardTitle: 'description',
+    severityField: 'severity',
+    fields: {
+      'description':    null,       // ya es el título
+      'status':         'Estado',
+      'severity':       'Severidad',
+      'onset_date':     'Inicio',
+      'abatement_date': 'Resolución',
+      'recorded_by':    'Registrado por',
+    },
+  ),
+  'medications': _SectionConfig(
+    icon: Icons.medication,
+    title: 'Medicamentos',
+    cardTitle: 'description',
+    fields: {
+      'description':  null,
+      'status':       'Estado',
+      'dosage':       'Dosis',
+      'frequency':    'Frecuencia',
+      'prescriber':   'Prescriptor',
+      'start_date':   'Inicio',
+      'end_date':     'Fin',
+      'instructions': 'Instrucciones',
+    },
+    multiline: {'instructions'},
+  ),
+  'observations': _SectionConfig(
+    icon: Icons.monitor_heart,
+    title: 'Observaciones',
+    cardTitle: 'description',
+    fields: {
+      'description':    null,
+      'category':       'Categoría',
+      'value':          'Valor',
+      'unit':           null,       // se combina con value
+      'value_low':      'Rango mín.',
+      'value_high':     'Rango máx.',
+      'interpretation': 'Interpretación',
+      'status':         'Estado',
+      'effective_date': 'Fecha',
+    },
+  ),
+  'allergies': _SectionConfig(
+    icon: Icons.warning_amber_rounded,
+    title: 'Alergias',
+    cardTitle: 'description',
+    severityField: 'severity',
+    fields: {
+      'description':     null,
+      'status':          'Estado',
+      'severity':        'Severidad',
+      'onset_date':      'Inicio',
+      'last_occurrence': 'Última ocurrencia',
+      'reaction':        'Reacción',
+      'recorded_by':     'Registrado por',
+    },
+    multiline: {'reaction'},
+  ),
+  'procedures': _SectionConfig(
+    icon: Icons.local_hospital,
+    title: 'Procedimientos',
+    cardTitle: 'description',
+    fields: {
+      'description':    null,
+      'status':         'Estado',
+      'performed_date': 'Realizado',
+      'performer':      'Realizado por',
+      'body_site':      'Sitio',
+      'reason':         'Motivo',
+    },
+    multiline: {'reason'},
+  ),
+  'immunizations': _SectionConfig(
+    icon: Icons.vaccines,
+    title: 'Inmunizaciones',
+    cardTitle: 'description',
+    fields: {
+      'description':     null,
+      'status':          'Estado',
+      'occurrence_date': 'Fecha',
+      'manufacturer':    'Fabricante',
+      'lot_number':      'Lote',
+      'site':            'Sitio',
+      'route':           'Vía',
+      'performer':       'Aplicado por',
+    },
+  ),
+  'diagnostic_reports': _SectionConfig(
+    icon: Icons.assignment,
+    title: 'Informes diagnósticos',
+    cardTitle: 'description',
+    fields: {
+      'description':    null,
+      'category':       'Categoría',
+      'status':         'Estado',
+      'effective_date': 'Fecha muestra',
+      'issued_date':    'Emitido',
+      'performer':      'Realizado por',
+      'conclusion':     'Conclusión',
+    },
+    multiline: {'conclusion'},
+  ),
+  'imaging_studies': _SectionConfig(
+    icon: Icons.image_search,
+    title: 'Estudios de imagen',
+    cardTitle: 'description',
+    fields: {
+      'description':      null,
+      'modality':         'Modalidad',
+      'status':           'Estado',
+      'started_date':     'Fecha',
+      'body_site':        'Sitio',
+      'number_series':    'Series',
+      'number_instances': 'Instancias',
+      'referrer':         'Derivado por',
+    },
+  ),
+  'devices': _SectionConfig(
+    icon: Icons.devices,
+    title: 'Dispositivos',
+    cardTitle: 'description',
+    fields: {
+      'description':    null,
+      'status':         'Estado',
+      'manufacturer':   'Fabricante',
+      'model':          'Modelo',
+      'lot_number':     'Lote',
+      'serial_number':  'Nº serie',
+      'expiration_date':'Vencimiento',
+      'udi':            'UDI',
+    },
+  ),
+  'care_plans': _SectionConfig(
+    icon: Icons.fact_check,
+    title: 'Planes de cuidado',
+    cardTitle: 'title',
+    fields: {
+      'title':       null,
+      'status':      'Estado',
+      'intent':      'Intención',
+      'category':    'Categoría',
+      'start_date':  'Inicio',
+      'end_date':    'Fin',
+      'description': 'Descripción',
+    },
+    multiline: {'description'},
+  ),
+  'care_team': _SectionConfig(
+    icon: Icons.groups,
+    title: 'Equipo de cuidado',
+    cardTitle: 'member_name',
+    fields: {
+      'member_name': null,
+      'role':        'Rol',
+      'member_type': 'Tipo',
+      'name':        'Equipo',
+      'status':      'Estado',
+      'category':    'Categoría',
+    },
+  ),
+};
+
+// ── Pantalla ───────────────────────────────────────────────────────────────────
 class PatientDetailScreen extends StatefulWidget {
-  final String patientId;
-  final String patientName;
+  final String          patientId;
+  final String          patientName;
   final LoginResponseDto currentUser;
 
   const PatientDetailScreen({
@@ -26,16 +233,10 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
   bool    _loading = true;
   String? _error;
 
-  // Estado de expansión por sección
+  // Secciones expandidas — hospitalizacion y personal abiertas por defecto
   final Map<String, bool> _expanded = {
-    'hospitalizacion': true,   // abierta por defecto
+    'hospitalizacion': true,
     'personal':        false,
-    'encuentros':      false,
-    'condiciones':     false,
-    'medicamentos':    false,
-    'observaciones':   false,
-    'alergias':        false,
-    'adicional':       false,
   };
 
   @override
@@ -48,6 +249,10 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     setState(() { _loading = true; _error = null; });
     try {
       final p = await _service.getPatientById(widget.patientId);
+      // Inicializar estado colapsado para secciones dinámicas
+      for (final key in p.sections.keys) {
+        _expanded.putIfAbsent(key, () => false);
+      }
       setState(() { _patient = p; _loading = false; });
     } catch (e) {
       setState(() { _error = e.toString(); _loading = false; });
@@ -55,30 +260,26 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
-  String _initials(PatientDetailModel p) {
-    final f = p.firstName.trim();
-    final l = p.lastName.trim();
-    if (f.isNotEmpty && l.isNotEmpty) return '${f[0]}${l[0]}'.toUpperCase();
-    return f.isNotEmpty ? f[0].toUpperCase() : '?';
-  }
-
-  String _fmt(String raw) {
-    if (raw.isEmpty) return '—';
+  String _fmt(dynamic raw) {
+    if (raw == null || raw.toString().isEmpty) return '—';
     try {
-      final dt = DateTime.parse(raw);
+      final dt = DateTime.parse(raw.toString());
       final d = '${dt.day.toString().padLeft(2,'0')}/'
                 '${dt.month.toString().padLeft(2,'0')}/'
                 '${dt.year}';
-      if (raw.contains('T') || raw.contains(' ')) {
-        final t = '${dt.hour.toString().padLeft(2,'0')}:'
-                  '${dt.minute.toString().padLeft(2,'0')}';
-        return '$d  $t';
+      final s = raw.toString();
+      if (s.contains('T') || s.contains(' ')) {
+        return '$d  ${dt.hour.toString().padLeft(2,'0')}:'
+               '${dt.minute.toString().padLeft(2,'0')}';
       }
       return d;
-    } catch (_) { return raw; }
+    } catch (_) { return raw.toString(); }
   }
 
-  String _val(String v) => v.isEmpty ? '—' : v;
+  String _val(dynamic v) {
+    if (v == null || v.toString().isEmpty) return '—';
+    return v.toString();
+  }
 
   String _genderLabel(String g) => switch (g.toLowerCase()) {
     'male'   => 'Masculino',
@@ -103,11 +304,18 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     _        => s,
   };
 
+  String _initials(PatientDetailModel p) {
+    final f = p.firstName.trim();
+    final l = p.lastName.trim();
+    if (f.isNotEmpty && l.isNotEmpty) return '${f[0]}${l[0]}'.toUpperCase();
+    return f.isNotEmpty ? f[0].toUpperCase() : '?';
+  }
+
   Color _severityColor(String s) => switch (s.toLowerCase()) {
-    'severe' || 'high'   => Colors.red,
-    'moderate' || 'medium' => Colors.orange,
-    'mild' || 'low'      => Colors.amber,
-    _                    => Colors.grey,
+    'severe' || 'high'       => Colors.red,
+    'moderate' || 'medium'   => Colors.orange,
+    'mild' || 'low'          => Colors.amber,
+    _                        => Colors.grey,
   };
 
   // ── Build ──────────────────────────────────────────────────────────────────
@@ -123,19 +331,15 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
           IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
         ],
       ),
-      floatingActionButton: _patient == null
-          ? null
+      floatingActionButton: _patient == null ? null
           : FloatingActionButton.extended(
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => NotesScreen(
-                    patientId: widget.patientId,
-                    patientName: _patient!.fullName,
-                    currentUser: widget.currentUser,
-                  ),
+              onPressed: () => Navigator.push(context, MaterialPageRoute(
+                builder: (_) => NotesScreen(
+                  patientId:   widget.patientId,
+                  patientName: _patient!.fullName,
+                  currentUser: widget.currentUser,
                 ),
-              ),
+              )),
               backgroundColor: AppTheme.primary,
               foregroundColor: Colors.white,
               icon: const Icon(Icons.note_alt),
@@ -149,244 +353,92 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     );
   }
 
-  Widget _buildError(ThemeData theme) => Center(
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.error_outline, color: theme.colorScheme.error, size: 48),
-        const SizedBox(height: 12),
-        Text(_error!, textAlign: TextAlign.center,
-            style: TextStyle(color: theme.colorScheme.error)),
-        const SizedBox(height: 16),
-        ElevatedButton.icon(
-          onPressed: _load,
-          icon: const Icon(Icons.refresh),
-          label: const Text('Reintentar'),
-        ),
-      ],
-    ),
-  );
-
   Widget _buildContent(PatientDetailModel p, ThemeData theme, bool isDark) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 32),
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 100),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildHeader(p, theme),
           const SizedBox(height: 20),
 
-          // Hospitalización
+          // ── Hospitalización (fija) ────────────────────────────────────
           _CollapsibleSection(
-            key: const ValueKey('hospitalizacion'),
+            isDark: isDark,
             icon: Icons.local_hospital,
             title: 'Hospitalización',
-            isDark: isDark,
             isExpanded: _expanded['hospitalizacion']!,
-            onToggle: () => setState(
-                () => _expanded['hospitalizacion'] = !_expanded['hospitalizacion']!),
+            onToggle: () => setState(() =>
+                _expanded['hospitalizacion'] = !_expanded['hospitalizacion']!),
             child: Column(children: [
-              _row(theme, 'Zona',           _val(p.ward)),
-              _row(theme, 'Cama',           _val(p.bedNumber)),
-              _row(theme, 'Ingreso',        _fmt(p.admissionDate)),
-              _row(theme, 'Alta esperada',  _fmt(p.expectedDischargeDate)),
-              _rowMulti(theme, 'Diagnóstico principal', _val(p.primaryDiagnosis)),
+              _row(theme, 'Zona',          _val(p.ward)),
+              _row(theme, 'Cama',          _val(p.bedNumber)),
+              _row(theme, 'Ingreso',       _fmt(p.admissionDate)),
+              _row(theme, 'Alta esperada', _fmt(p.expectedDischargeDate)),
+              _rowMulti(theme, 'Diagnóstico principal',
+                  _val(p.primaryDiagnosis)),
             ]),
           ),
           const SizedBox(height: 12),
 
-          // Datos personales
+          // ── Datos personales (fija) ───────────────────────────────────
           _CollapsibleSection(
-            key: const ValueKey('personal'),
+            isDark: isDark,
             icon: Icons.person,
             title: 'Datos personales',
-            isDark: isDark,
             isExpanded: _expanded['personal']!,
-            onToggle: () => setState(
-                () => _expanded['personal'] = !_expanded['personal']!),
+            onToggle: () => setState(() =>
+                _expanded['personal'] = !_expanded['personal']!),
             child: Column(children: [
-              _row(theme, 'Nombre',          p.fullName),
-              _row(theme, 'Nacimiento',      _fmt(p.birthDate)),
-              _row(theme, 'Género',          _genderLabel(p.gender)),
-              _row(theme, 'Estado civil',    _maritalLabel(p.maritalStatus)),
-              _row(theme, 'Teléfono',        _val(p.phone)),
-              _row(theme, 'Idioma',          _val(p.language)),
-              _row(theme, 'Etnia',           _val(p.ethnicity)),
-              _rowMulti(theme, 'Dirección',  _val(p.address)),
+              _row(theme, 'Nombre',       p.fullName),
+              _row(theme, 'Nacimiento',   _fmt(p.birthDate)),
+              _row(theme, 'Género',       _genderLabel(p.gender)),
+              _row(theme, 'Estado civil', _maritalLabel(p.maritalStatus)),
+              _row(theme, 'Teléfono',     _val(p.phone)),
+              _row(theme, 'Idioma',       _val(p.language)),
+              _row(theme, 'Etnia',        _val(p.ethnicity)),
+              _rowMulti(theme, 'Dirección', _val(p.address)),
             ]),
           ),
           const SizedBox(height: 12),
 
-          // Encuentros clínicos
-          _CollapsibleSection(
-            key: const ValueKey('encuentros'),
-            icon: Icons.medical_services,
-            title: 'Encuentros clínicos',
-            badge: p.encounters.length,
-            isDark: isDark,
-            isExpanded: _expanded['encuentros']!,
-            onToggle: () => setState(
-                () => _expanded['encuentros'] = !_expanded['encuentros']!),
-            child: p.encounters.isEmpty
-                ? _empty(theme, 'Sin encuentros registrados')
-                : Column(
-                    children: p.encounters.asMap().entries.map((e) {
-                      final enc = e.value;
-                      return _subCard(theme, isDark,
-                        title: _val(enc.type),
-                        items: [
-                          _row(theme, 'Estado',    _val(enc.status)),
-                          _row(theme, 'Clase',     _val(enc.encounterClass)),
-                          _row(theme, 'Inicio',    _fmt(enc.startDate)),
-                          _row(theme, 'Fin',       _fmt(enc.endDate)),
-                          _row(theme, 'Médico',    _val(enc.practitioner)),
-                          _rowMulti(theme, 'Motivo',   _val(enc.reason)),
-                          if (enc.referralReason.isNotEmpty)
-                            _rowMulti(theme, 'Derivación', enc.referralReason),
-                        ],
-                      );
-                    }).toList(),
-                  ),
-          ),
-          const SizedBox(height: 12),
+          // ── Secciones dinámicas ───────────────────────────────────────
+          ...p.sections.entries.map((entry) {
+            final key     = entry.key;
+            final items   = entry.value;
+            final config  = _sectionConfigs[key];
+            final icon    = config?.icon  ?? Icons.list_alt;
+            final title   = config?.title ?? key;
 
-          // Condiciones
-          _CollapsibleSection(
-            key: const ValueKey('condiciones'),
-            icon: Icons.healing,
-            title: 'Condiciones',
-            badge: p.conditions.length,
-            isDark: isDark,
-            isExpanded: _expanded['condiciones']!,
-            onToggle: () => setState(
-                () => _expanded['condiciones'] = !_expanded['condiciones']!),
-            child: p.conditions.isEmpty
-                ? _empty(theme, 'Sin condiciones registradas')
-                : Column(
-                    children: p.conditions.map((c) => _subCard(theme, isDark,
-                      title: _val(c.description),
-                      severityColor: c.severity.isNotEmpty
-                          ? _severityColor(c.severity) : null,
-                      items: [
-                        _row(theme, 'Estado',    _val(c.status)),
-                        _row(theme, 'Severidad', _val(c.severity)),
-                        _row(theme, 'Inicio',    _fmt(c.onsetDate)),
-                        _row(theme, 'Resolución',_fmt(c.abatementDate)),
-                        _row(theme, 'Registrado por', _val(c.recordedBy)),
-                      ],
-                    )).toList(),
-                  ),
-          ),
-          const SizedBox(height: 12),
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _CollapsibleSection(
+                isDark: isDark,
+                icon: icon,
+                title: title,
+                badge: items.length,
+                isExpanded: _expanded[key] ?? false,
+                onToggle: () => setState(() =>
+                    _expanded[key] = !(_expanded[key] ?? false)),
+                child: items.isEmpty
+                    ? _empty(theme, 'Sin registros')
+                    : Column(
+                        children: items.map((item) =>
+                            _buildDynamicCard(item, config, theme, isDark)
+                        ).toList(),
+                      ),
+              ),
+            );
+          }),
 
-          // Medicamentos
+          // ── Información adicional (fija) ──────────────────────────────
           _CollapsibleSection(
-            key: const ValueKey('medicamentos'),
-            icon: Icons.medication,
-            title: 'Medicamentos',
-            badge: p.medications.length,
             isDark: isDark,
-            isExpanded: _expanded['medicamentos']!,
-            onToggle: () => setState(
-                () => _expanded['medicamentos'] = !_expanded['medicamentos']!),
-            child: p.medications.isEmpty
-                ? _empty(theme, 'Sin medicamentos registrados')
-                : Column(
-                    children: p.medications.map((m) => _subCard(theme, isDark,
-                      title: _val(m.description),
-                      items: [
-                        _row(theme, 'Estado',    _val(m.status)),
-                        _row(theme, 'Dosis',     _val(m.dosage)),
-                        _row(theme, 'Frecuencia',_val(m.frequency)),
-                        _row(theme, 'Prescriptor',_val(m.prescriber)),
-                        _row(theme, 'Inicio',    _fmt(m.startDate)),
-                        _row(theme, 'Fin',       _fmt(m.endDate)),
-                        if (m.instructions.isNotEmpty)
-                          _rowMulti(theme, 'Instrucciones', m.instructions),
-                      ],
-                    )).toList(),
-                  ),
-          ),
-          const SizedBox(height: 12),
-
-          // Observaciones
-          _CollapsibleSection(
-            key: const ValueKey('observaciones'),
-            icon: Icons.monitor_heart,
-            title: 'Observaciones',
-            badge: p.observations.length,
-            isDark: isDark,
-            isExpanded: _expanded['observaciones']!,
-            onToggle: () => setState(
-                () => _expanded['observaciones'] = !_expanded['observaciones']!),
-            child: p.observations.isEmpty
-                ? _empty(theme, 'Sin observaciones registradas')
-                : Column(
-                    children: p.observations.map((o) {
-                      final valueStr = [
-                        if (o.value.isNotEmpty) o.value,
-                        if (o.unit.isNotEmpty) o.unit,
-                      ].join(' ');
-                      final rangeStr = (o.valueLow.isNotEmpty || o.valueHigh.isNotEmpty)
-                          ? '${o.valueLow} – ${o.valueHigh} ${o.unit}'.trim()
-                          : '';
-                      return _subCard(theme, isDark,
-                        title: _val(o.description),
-                        items: [
-                          _row(theme, 'Categoría',     _val(o.category)),
-                          _row(theme, 'Valor',         valueStr.isEmpty ? '—' : valueStr),
-                          if (rangeStr.isNotEmpty)
-                            _row(theme, 'Rango normal', rangeStr),
-                          _row(theme, 'Interpretación',_val(o.interpretation)),
-                          _row(theme, 'Estado',        _val(o.status)),
-                          _row(theme, 'Fecha',         _fmt(o.effectiveDate)),
-                        ],
-                      );
-                    }).toList(),
-                  ),
-          ),
-          const SizedBox(height: 12),
-
-          // Alergias
-          _CollapsibleSection(
-            key: const ValueKey('alergias'),
-            icon: Icons.warning_amber_rounded,
-            title: 'Alergias',
-            badge: p.allergies.length,
-            isDark: isDark,
-            isExpanded: _expanded['alergias']!,
-            onToggle: () => setState(
-                () => _expanded['alergias'] = !_expanded['alergias']!),
-            child: p.allergies.isEmpty
-                ? _empty(theme, 'Sin alergias registradas')
-                : Column(
-                    children: p.allergies.map((a) => _subCard(theme, isDark,
-                      title: _val(a.description),
-                      severityColor: a.severity.isNotEmpty
-                          ? _severityColor(a.severity) : null,
-                      items: [
-                        _row(theme, 'Estado',           _val(a.status)),
-                        _row(theme, 'Severidad',        _val(a.severity)),
-                        _row(theme, 'Inicio',           _fmt(a.onsetDate)),
-                        _row(theme, 'Última ocurrencia',_fmt(a.lastOccurrence)),
-                        _row(theme, 'Registrado por',   _val(a.recordedBy)),
-                        if (a.reaction.isNotEmpty)
-                          _rowMulti(theme, 'Reacción', a.reaction),
-                      ],
-                    )).toList(),
-                  ),
-          ),
-          const SizedBox(height: 12),
-
-          // Información adicional
-          _CollapsibleSection(
-            key: const ValueKey('adicional'),
             icon: Icons.info_outline,
             title: 'Información adicional',
-            isDark: isDark,
-            isExpanded: _expanded['adicional']!,
-            onToggle: () => setState(
-                () => _expanded['adicional'] = !_expanded['adicional']!),
+            isExpanded: _expanded['adicional'] ?? false,
+            onToggle: () => setState(() =>
+                _expanded['adicional'] = !(_expanded['adicional'] ?? false)),
             child: Column(children: [
               _row(theme, 'Origen datos', _sourceLabel(p.sourceSystem)),
               _row(theme, 'Registrado',   _fmt(p.createdAt)),
@@ -395,6 +447,117 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
         ],
       ),
     );
+  }
+
+  // ── Sub-tarjeta dinámica ───────────────────────────────────────────────────
+  Widget _buildDynamicCard(
+    Map<String, dynamic> item,
+    _SectionConfig? config,
+    ThemeData theme,
+    bool isDark,
+  ) {
+    // Determinar título de la tarjeta
+    String cardTitle = '—';
+    if (config?.cardTitle != null) {
+      cardTitle = _val(item[config!.cardTitle]);
+    }
+
+    // Color de severidad
+    Color? severityColor;
+    if (config?.severityField != null) {
+      final sv = item[config!.severityField]?.toString() ?? '';
+      if (sv.isNotEmpty) severityColor = _severityColor(sv);
+    }
+
+    // Filas a mostrar
+    List<Widget> rows = [];
+
+    if (config != null) {
+      for (final entry in config.fields.entries) {
+        final field = entry.key;
+        final label = entry.value;
+        if (label == null) continue;     // título ya usado arriba
+        if (field == config.cardTitle) continue;
+
+        final raw = item[field];
+        if (raw == null || raw.toString().isEmpty) continue;
+
+        // Caso especial: value + unit en observaciones
+        if (field == 'value' && item.containsKey('unit')) {
+          final v = _val(raw);
+          final u = _val(item['unit']);
+          final combined = u == '—' ? v : '$v $u';
+          rows.add(config.multiline.contains(field)
+              ? _rowMulti(theme, label, combined)
+              : _row(theme, label, combined));
+          continue;
+        }
+        if (field == 'unit') continue;   // ya combinado
+
+        // Detectar si es fecha
+        final display = _looksLikeDate(raw.toString())
+            ? _fmt(raw) : _val(raw);
+
+        rows.add(config.multiline.contains(field)
+            ? _rowMulti(theme, label, display)
+            : _row(theme, label, display));
+      }
+    } else {
+      // Sin config: mostrar todos los campos que no sean id/external
+      for (final entry in item.entries) {
+        if (['id','external_id','source_system'].contains(entry.key)) continue;
+        final raw = entry.value;
+        if (raw == null || raw.toString().isEmpty) continue;
+        final label = entry.key.replaceAll('_', ' ');
+        final display = _looksLikeDate(raw.toString()) ? _fmt(raw) : _val(raw);
+        rows.add(_row(theme, label, display));
+      }
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.04)
+            : AppTheme.primary.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: severityColor?.withValues(alpha: 0.4) ??
+              AppTheme.primary.withValues(alpha: 0.15),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+            child: Row(children: [
+              if (severityColor != null) ...[
+                Container(
+                  width: 8, height: 8,
+                  decoration: BoxDecoration(
+                      color: severityColor, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 8),
+              ],
+              Expanded(
+                child: Text(cardTitle,
+                    style: theme.textTheme.bodyMedium
+                        ?.copyWith(fontWeight: FontWeight.bold)),
+              ),
+            ]),
+          ),
+          if (rows.isNotEmpty) ...[
+            const Divider(height: 1),
+            ...rows,
+          ],
+        ],
+      ),
+    );
+  }
+
+  bool _looksLikeDate(String s) {
+    return RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(s);
   }
 
   // ── Header ─────────────────────────────────────────────────────────────────
@@ -470,69 +633,42 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
     child: Text(msg,
         style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.5))),
+            color: theme.textTheme.bodySmall?.color
+                ?.withValues(alpha: 0.5))),
   );
 
-  // Sub-tarjeta para items dentro de listas (encuentros, condiciones…)
-  Widget _subCard(ThemeData theme, bool isDark, {
-    required String title,
-    required List<Widget> items,
-    Color? severityColor,
-  }) =>
-      Container(
-        margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-        decoration: BoxDecoration(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.04)
-              : AppTheme.primary.withValues(alpha: 0.04),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: severityColor?.withValues(alpha: 0.4) ??
-                AppTheme.primary.withValues(alpha: 0.15),
-          ),
+  Widget _buildError(ThemeData theme) => Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.error_outline,
+            color: theme.colorScheme.error, size: 48),
+        const SizedBox(height: 12),
+        Text(_error!,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: theme.colorScheme.error)),
+        const SizedBox(height: 16),
+        ElevatedButton.icon(
+          onPressed: _load,
+          icon: const Icon(Icons.refresh),
+          label: const Text('Reintentar'),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
-              child: Row(
-                children: [
-                  if (severityColor != null) ...[
-                    Container(
-                      width: 8, height: 8,
-                      decoration: BoxDecoration(
-                          color: severityColor, shape: BoxShape.circle),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                  Expanded(
-                    child: Text(title,
-                        style: theme.textTheme.bodyMedium
-                            ?.copyWith(fontWeight: FontWeight.bold)),
-                  ),
-                ],
-              ),
-            ),
-            const Divider(height: 1),
-            ...items,
-          ],
-        ),
-      );
+      ],
+    ),
+  );
 }
 
-// ── Widget colapsable reutilizable ─────────────────────────────────────────────
+// ── Sección colapsable reutilizable ───────────────────────────────────────────
 class _CollapsibleSection extends StatelessWidget {
-  final IconData icon;
-  final String   title;
-  final int?     badge;
-  final bool     isDark;
-  final bool     isExpanded;
+  final IconData     icon;
+  final String       title;
+  final int?         badge;
+  final bool         isDark;
+  final bool         isExpanded;
   final VoidCallback onToggle;
-  final Widget   child;
+  final Widget       child;
 
   const _CollapsibleSection({
-    super.key,
     required this.icon,
     required this.title,
     this.badge,
@@ -570,7 +706,6 @@ class _CollapsibleSection extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // Encabezado siempre visible
           InkWell(
             onTap: onToggle,
             borderRadius: isExpanded
@@ -595,7 +730,6 @@ class _CollapsibleSection extends StatelessWidget {
                             fontWeight: FontWeight.bold,
                             color: AppTheme.primary)),
                   ),
-                  // Badge con cantidad
                   if (badge != null && badge! > 0)
                     Container(
                       margin: const EdgeInsets.only(right: 8),
@@ -621,7 +755,6 @@ class _CollapsibleSection extends StatelessWidget {
               ),
             ),
           ),
-          // Contenido animado
           AnimatedCrossFade(
             firstChild: const SizedBox.shrink(),
             secondChild: Column(children: [

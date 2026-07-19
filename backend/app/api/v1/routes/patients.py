@@ -35,66 +35,90 @@ def get_patient(patient_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail="Paciente no encontrado")
 
-    encounters = db.execute(
-        text("""
-            SELECT encounter_type, status, start_date, end_date,
-                   reason, practitioner_name, referral_reason, encounter_class
-            FROM encounters
-            WHERE patient_id = :id
-            ORDER BY start_date DESC
-        """),
-        {"id": patient_id}
-    ).fetchall()
-
-    conditions = db.execute(
-        text("""
-            SELECT description, status, severity,
-                   onset_date, abatement_date, recorded_by
-            FROM conditions
-            WHERE patient_id = :id
-            ORDER BY onset_date DESC
-        """),
-        {"id": patient_id}
-    ).fetchall()
-
-    medications = db.execute(
-        text("""
-            SELECT description, dosage, frequency, prescriber,
-                   instructions, status, start_date, end_date
-            FROM medications
-            WHERE patient_id = :id
-            ORDER BY start_date DESC
-        """),
-        {"id": patient_id}
-    ).fetchall()
-
-    observations = db.execute(
-        text("""
-            SELECT description, value, unit, value_high, value_low,
-                   interpretation, category, status, effective_date
-            FROM observations
-            WHERE patient_id = :id
-            ORDER BY effective_date DESC
-        """),
-        {"id": patient_id}
-    ).fetchall()
-
-    allergies = db.execute(
-        text("""
-            SELECT description, severity, status,
-                   onset_date, reaction, last_occurrence, recorded_by
-            FROM allergies
-            WHERE patient_id = :id
-            ORDER BY onset_date DESC
-        """),
-        {"id": patient_id}
-    ).fetchall()
+    def q(sql, params=None):
+        return [dict(r._mapping) for r in
+                db.execute(text(sql), params or {"id": patient_id}).fetchall()]
 
     return {
         **dict(patient._mapping),
-        "encounters":   [dict(r._mapping) for r in encounters],
-        "conditions":   [dict(r._mapping) for r in conditions],
-        "medications":  [dict(r._mapping) for r in medications],
-        "observations": [dict(r._mapping) for r in observations],
-        "allergies":    [dict(r._mapping) for r in allergies],
+        "sections": {
+            "encounters": q("""
+                SELECT encounter_type, status, encounter_class,
+                       start_date, end_date, reason,
+                       practitioner_name, referral_reason
+                FROM encounters WHERE patient_id = :id
+                ORDER BY start_date DESC"""),
+
+            "conditions": q("""
+                SELECT description, status, severity,
+                       onset_date, abatement_date, recorded_by
+                FROM conditions WHERE patient_id = :id
+                ORDER BY onset_date DESC"""),
+
+            "medications": q("""
+                SELECT description, status, dosage, frequency,
+                       prescriber, instructions, start_date, end_date
+                FROM medications WHERE patient_id = :id
+                ORDER BY start_date DESC"""),
+
+            "observations": q("""
+                SELECT description, category, value, unit,
+                       value_low, value_high, interpretation,
+                       status, effective_date
+                FROM observations WHERE patient_id = :id
+                ORDER BY effective_date DESC"""),
+
+            "allergies": q("""
+                SELECT description, severity, status,
+                       onset_date, reaction,
+                       last_occurrence, recorded_by
+                FROM allergies WHERE patient_id = :id
+                ORDER BY onset_date DESC"""),
+
+            "procedures": q("""
+                SELECT description, status, performed_date,
+                       performer, reason, body_site
+                FROM procedures WHERE patient_id = :id
+                ORDER BY performed_date DESC"""),
+
+            "immunizations": q("""
+                SELECT description, status, occurrence_date,
+                       lot_number, manufacturer, site,
+                       route, performer
+                FROM immunizations WHERE patient_id = :id
+                ORDER BY occurrence_date DESC"""),
+
+            "diagnostic_reports": q("""
+                SELECT description, category, status,
+                       effective_date, issued_date,
+                       performer, conclusion
+                FROM diagnostic_reports WHERE patient_id = :id
+                ORDER BY effective_date DESC"""),
+
+            "imaging_studies": q("""
+                SELECT description, modality, status,
+                       started_date, body_site,
+                       number_series, number_instances, referrer
+                FROM imaging_studies WHERE patient_id = :id
+                ORDER BY started_date DESC"""),
+
+            "devices": q("""
+                SELECT description, status, manufacturer,
+                       model, lot_number, serial_number,
+                       expiration_date, udi
+                FROM devices WHERE patient_id = :id"""),
+
+            "care_plans": q("""
+                SELECT title, description, status, intent,
+                       category, start_date, end_date
+                FROM care_plans WHERE patient_id = :id
+                ORDER BY start_date DESC"""),
+
+            "care_team": q("""
+                SELECT ctm.member_name, ctm.role, ctm.member_type,
+                       ct.name, ct.status, ct.category
+                FROM care_team_members ctm
+                JOIN care_teams ct ON ctm.care_team_id = ct.id
+                WHERE ctm.patient_id = :id"""),
+        }
     }
