@@ -142,3 +142,4 @@ desktop.ini
 # Bundles Synthea — demasiado pesados para el repo (~385 MB)
 integration/test_data/fhir
 backend/cloudflare-tunnel-url.txt
+backend/fhir_sync_state.json
