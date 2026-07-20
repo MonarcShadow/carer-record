@@ -74,7 +74,7 @@ def save_state(state: dict):
 
 # ── Cliente FHIR ──────────────────────────────────────────────────────────────
 
-def fetch_updated_resources(resource_type: str, since: str | None) -> list:
+def fetch_updated_resources(resource_type: str, since: str | None, extra_params: dict = None) -> list:
     """
     Descarga todos los recursos de un tipo actualizados después de `since`.
     Maneja paginación automáticamente.
@@ -85,6 +85,9 @@ def fetch_updated_resources(resource_type: str, since: str | None) -> list:
     }
     if since:
         params["_lastUpdated"] = f"gt{since}"
+
+    if extra_params:
+        params.update(extra_params)
 
     url      = f"{FHIR_BASE_URL}/{resource_type}"
     resources = []
@@ -743,8 +746,12 @@ def sync_cycle():
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
     for rtype in RESOURCE_TYPES:
-        since     = state.get(rtype)
-        resources = fetch_updated_resources(rtype, since)
+        since = state.get(rtype)
+        if rtype == "Patient":
+            extra_params = {"deceased:not": "true"}
+        else:
+            extra_params = {"patient.deceased:not": "true"}
+        resources = fetch_updated_resources(rtype, since, extra_params=extra_params)
 
         if not resources:
             log.info("  %s — sin cambios", rtype)

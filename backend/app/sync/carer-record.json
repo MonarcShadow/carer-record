@@ -1,0 +1,19 @@
+{
+  "clinic_id": "carer-record",
+  "resource_types": [
+    "Patient", "Encounter", "Condition", "MedicationRequest",
+    "Observation", "AllergyIntolerance", "Procedure"
+  ],
+  "capabilities": {
+    "supports_chained_search": true,
+    "supports_deceased_filter": true
+  },
+  "extension_urls": {
+    "ward": "urn:hospital-simulado:fhir:ward",
+    "bed_number": "urn:hospital-simulado:fhir:bed-number",
+    "admission_date": "urn:hospital-simulado:fhir:admission-date"
+  },
+  "auth": {
+    "type": "none"
+  }
+}
