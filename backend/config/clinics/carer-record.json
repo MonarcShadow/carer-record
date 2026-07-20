@@ -1,0 +1,38 @@
+{
+  "clinic_id": "carer-record",
+  "resource_types": [
+    "Patient", "Encounter", "Condition", "MedicationRequest",
+    "Observation", "AllergyIntolerance", "Procedure",
+    "Immunization", "DiagnosticReport", "ImagingStudy",
+    "CarePlan", "CareTeam", "Device"
+  ],
+  "capabilities": {
+    "supports_chained_search": true,
+    "supports_deceased_filter": true
+  },
+  "extension_urls": {
+    "ward": "urn:hospital-simulado:fhir:ward",
+    "bed_number": "urn:hospital-simulado:fhir:bed-number",
+    "admission_date": "urn:hospital-simulado:fhir:admission-date"
+  },
+  "auth": {
+    "type": "none"
+  },
+  "tables": {
+    "Patient": "patients",
+    "Encounter": "encounters",
+    "Condition": "conditions",
+    "MedicationRequest": "medications",
+    "Observation": "observations",
+    "AllergyIntolerance": "allergies",
+    "Procedure": "procedures",
+    "Immunization": "immunizations",
+    "DiagnosticReport": "diagnostic_reports",
+    "ImagingStudy": "imaging_studies",
+    "CarePlan": "care_plans",
+    "CareTeam": "care_teams",
+    "Device": "devices",
+    "CareTeamMembers": "care_team_members",
+    "SyncLog": "fhir_sync_log"
+  }
+}

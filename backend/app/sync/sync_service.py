@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
 """
-Servicio de sincronización FHIR R4 → MariaDB
-=============================================
-Consulta HAPI FHIR periódicamente usando _lastUpdated para traer
+Servicio de sincronización FHIR R4 → MariaDB (multi-clínica)
+==============================================================
+Consulta un servidor FHIR periódicamente usando _lastUpdated para traer
 solo los recursos modificados desde la última sincronización.
+
+La configuración específica de cada clínica (tipos de recursos a
+sincronizar, nombres de tabla, extensiones FHIR propietarias, y
+capacidades del servidor) vive en un JSON externo, apuntado por
+CLINIC_CONFIG en el .env. Esto permite reusar este mismo script
+contra distintos sistemas de distintas clínicas sin tocar código.
 
 Ejecutar como servicio systemd:
     python3 -m app.sync.sync_service
 """
+import re
 import time
 import json
 import uuid
@@ -26,6 +33,10 @@ FHIR_BASE_URL       = os.getenv('FHIR_BASE_URL', '').rstrip('/')
 SYNC_INTERVAL_SECS  = int(os.getenv('FHIR_SYNC_INTERVAL_MINUTES', '5')) * 60
 PAGE_SIZE           = int(os.getenv('FHIR_PAGE_SIZE', '50'))
 STATE_FILE          = Path(__file__).parent.parent.parent / 'fhir_sync_state.json'
+CLINIC_CONFIG_PATH  = Path(os.getenv(
+    'CLINIC_CONFIG',
+    str(Path(__file__).parent.parent.parent / 'config' / 'clinics' / 'carer-record.json')
+))
 
 DB_CONFIG = {
     "host":     "localhost",
@@ -34,29 +45,118 @@ DB_CONFIG = {
     "database": os.getenv('DB_NAME', 'carer_record'),
 }
 
-# Tipos de recursos a sincronizar en orden de dependencia
-RESOURCE_TYPES = [
-    "Patient",
-    "Encounter",
-    "Condition",
-    "MedicationRequest",
-    "Observation",
-    "AllergyIntolerance",
-    "Procedure",
-    "Immunization",
-    "DiagnosticReport",
-    "ImagingStudy",
-    "CarePlan",
-    "CareTeam",
-    "Device",
-]
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [sync_service] %(levelname)s %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 log = logging.getLogger(__name__)
+
+# ── Configuración de la clínica ────────────────────────────────────────────────
+
+# Nombres de tabla por defecto, usados como fallback si el JSON de la
+# clínica no define alguno (o no define "tables" en absoluto).
+DEFAULT_TABLES = {
+    "Patient":            "patients",
+    "Encounter":          "encounters",
+    "Condition":          "conditions",
+    "MedicationRequest":  "medications",
+    "Observation":        "observations",
+    "AllergyIntolerance": "allergies",
+    "Procedure":          "procedures",
+    "Immunization":       "immunizations",
+    "DiagnosticReport":   "diagnostic_reports",
+    "ImagingStudy":       "imaging_studies",
+    "CarePlan":           "care_plans",
+    "CareTeam":           "care_teams",
+    "Device":             "devices",
+    "CareTeamMembers":    "care_team_members",
+    "SyncLog":            "fhir_sync_log",
+}
+
+_IDENTIFIER_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+
+
+def _safe_identifier(name: str, fallback: str) -> str:
+    """
+    Valida que un nombre de tabla venga limpio (solo letras/números/_).
+    El JSON de config es un archivo local de confianza, pero igual se
+    valida antes de interpolarlo en SQL para evitar errores por config
+    mal escrita (nunca se usa input directo del usuario final aquí).
+    """
+    if name and _IDENTIFIER_RE.match(name):
+        return name
+    log.warning("Nombre de tabla inválido '%s', usando '%s'", name, fallback)
+    return fallback
+
+
+def load_clinic_config() -> dict:
+    if not CLINIC_CONFIG_PATH.exists():
+        log.warning(
+            "No se encontró config de clínica en %s, usando valores por defecto",
+            CLINIC_CONFIG_PATH,
+        )
+        return {}
+    try:
+        return json.loads(CLINIC_CONFIG_PATH.read_text(encoding="utf-8"))
+    except Exception as e:
+        log.error("Error leyendo %s: %s — usando valores por defecto", CLINIC_CONFIG_PATH, e)
+        return {}
+
+
+CLINIC = load_clinic_config()
+
+RESOURCE_TYPES = CLINIC.get("resource_types") or list(DEFAULT_TABLES.keys() - {"CareTeamMembers", "SyncLog"})
+
+EXTENSION_URLS = CLINIC.get("extension_urls", {
+    "ward":           "urn:hospital-simulado:fhir:ward",
+    "bed_number":     "urn:hospital-simulado:fhir:bed-number",
+    "admission_date": "urn:hospital-simulado:fhir:admission-date",
+})
+
+CAPABILITIES = CLINIC.get("capabilities", {
+    "supports_chained_search": False,
+    "supports_deceased_filter": False,
+})
+
+_raw_tables = CLINIC.get("tables", {})
+TABLES = {
+    key: _safe_identifier(_raw_tables.get(key, default), default)
+    for key, default in DEFAULT_TABLES.items()
+}
+
+# Atajos usados en los upserts de más abajo
+TBL_PATIENTS      = TABLES["Patient"]
+TBL_ENCOUNTERS    = TABLES["Encounter"]
+TBL_CONDITIONS    = TABLES["Condition"]
+TBL_MEDICATIONS   = TABLES["MedicationRequest"]
+TBL_OBSERVATIONS  = TABLES["Observation"]
+TBL_ALLERGIES     = TABLES["AllergyIntolerance"]
+TBL_PROCEDURES    = TABLES["Procedure"]
+TBL_IMMUNIZATIONS = TABLES["Immunization"]
+TBL_DIAG_REPORTS  = TABLES["DiagnosticReport"]
+TBL_IMAGING       = TABLES["ImagingStudy"]
+TBL_CARE_PLANS    = TABLES["CarePlan"]
+TBL_CARE_TEAMS    = TABLES["CareTeam"]
+TBL_CT_MEMBERS    = TABLES["CareTeamMembers"]
+TBL_DEVICES       = TABLES["Device"]
+TBL_SYNC_LOG      = TABLES["SyncLog"]
+
+# resourceType FHIR → columna de tabla usada en cada upsert
+_TABLE_BY_RTYPE = {
+    "Encounter":          TBL_ENCOUNTERS,
+    "Condition":          TBL_CONDITIONS,
+    "MedicationRequest":  TBL_MEDICATIONS,
+    "Observation":        TBL_OBSERVATIONS,
+    "AllergyIntolerance": TBL_ALLERGIES,
+    "Procedure":          TBL_PROCEDURES,
+    "Immunization":       TBL_IMMUNIZATIONS,
+    "DiagnosticReport":   TBL_DIAG_REPORTS,
+    "ImagingStudy":       TBL_IMAGING,
+    "CarePlan":           TBL_CARE_PLANS,
+    "CareTeam":           TBL_CARE_TEAMS,
+    "Device":             TBL_DEVICES,
+}
 
 # ── Estado de sincronización ──────────────────────────────────────────────────
 
@@ -120,14 +220,30 @@ def fetch_updated_resources(resource_type: str, since: str | None, extra_params:
 
     return resources
 
-# ── Importación incremental ───────────────────────────────────────────────────
-# Reutiliza los helpers del fhir_adapter existente
+
+def _deceased_filter_params(resource_type: str) -> dict | None:
+    """
+    Arma el filtro de fallecidos según lo que soporte el servidor de la
+    clínica (definido en capabilities dentro del JSON de config).
+    """
+    if resource_type == "Patient":
+        if CAPABILITIES.get("supports_deceased_filter"):
+            return {"deceased:not": "true"}
+        return None
+
+    if CAPABILITIES.get("supports_chained_search"):
+        return {"patient.deceased:not": "true"}
+    return None
+
+
+# ── Helpers de mapeo FHIR ─────────────────────────────────────────────────────
+# (idénticos a los de fhir_adapter.py, reusados desde ahí para no duplicar)
 
 from app.fhir.fhir_adapter import (
     _gender, _date, _datetime, _name, _identifier,
     _code_display, _code_value, _code_system,
     _extract_ref_id, _patient_ref, _truncate,
-    _extract_patient_extended, EXTENSION_URLS,
+    _extract_patient_extended,
 )
 
 
@@ -138,33 +254,30 @@ def _get_or_create_patient(cursor, resource: dict) -> str | None:
         return None
 
     cursor.execute(
-        "SELECT id FROM patients WHERE external_id = %s", (ext_id,)
+        f"SELECT id FROM {TBL_PATIENTS} WHERE external_id = %s", (ext_id,)
     )
     row = cursor.fetchone()
     if row:
         return row[0]
 
-    # Crear nuevo paciente
     internal_id = str(uuid.uuid4())
     first, last = _name(resource.get("name", []))
     extended    = _extract_patient_extended(resource)
 
-    # Para sync incremental no tenemos el bundle completo,
-    # así que la ubicación vendrá de las extensiones del recurso
     ward = bed_number = admission_date = None
     for ext in resource.get("extension", []):
         url = ext.get("url", "")
-        if url == EXTENSION_URLS["ward"]:
+        if url == EXTENSION_URLS.get("ward"):
             ward = ext.get("valueString")
-        elif url == EXTENSION_URLS["bed_number"]:
+        elif url == EXTENSION_URLS.get("bed_number"):
             bed_number = ext.get("valueString")
-        elif url == EXTENSION_URLS["admission_date"]:
+        elif url == EXTENSION_URLS.get("admission_date"):
             admission_date = _datetime(ext.get("valueDateTime"))
 
     try:
         cursor.execute(
-            """
-            INSERT INTO patients
+            f"""
+            INSERT INTO {TBL_PATIENTS}
                 (id, external_id, source_system,
                  first_name, last_name, birth_date, gender, local_id,
                  phone, address, marital_status, language, ethnicity,
@@ -199,66 +312,47 @@ def _get_or_create_patient(cursor, resource: dict) -> str | None:
 def _upsert_clinical(cursor, resource: dict, internal_pat_id: str):
     """
     Inserta o actualiza un recurso clínico.
-    Si ya existe en fhir_sync_log, actualiza el registro en la DB.
+    Si ya existe en el log de sync, actualiza el registro en la DB.
     """
     rtype  = resource.get("resourceType")
     res_id = resource.get("id", str(uuid.uuid4()))
 
-    # Verificar si ya existe
+    if rtype not in _TABLE_BY_RTYPE:
+        log.debug("Tipo de recurso no mapeado a tabla: %s", rtype)
+        return
+
     cursor.execute(
-        "SELECT id FROM fhir_sync_log WHERE resource_type=%s AND resource_id=%s",
+        f"SELECT id FROM {TBL_SYNC_LOG} WHERE resource_type=%s AND resource_id=%s",
         (rtype, res_id)
     )
     already_exists = cursor.fetchone() is not None
 
+    handlers = {
+        "Encounter":          _upsert_encounter,
+        "Condition":          _upsert_condition,
+        "MedicationRequest":  _upsert_medication,
+        "Observation":        _upsert_observation,
+        "AllergyIntolerance": _upsert_allergy,
+        "Procedure":          _upsert_procedure,
+        "Immunization":       _upsert_immunization,
+        "DiagnosticReport":   _upsert_diagnostic_report,
+        "ImagingStudy":       _upsert_imaging_study,
+        "CarePlan":           _upsert_care_plan,
+        "CareTeam":           _upsert_care_team,
+        "Device":             _upsert_device,
+    }
+
     try:
-        if rtype == "Encounter":
-            _upsert_encounter(cursor, resource, res_id,
-                              internal_pat_id, already_exists)
-        elif rtype == "Condition":
-            _upsert_condition(cursor, resource, res_id,
-                              internal_pat_id, already_exists)
-        elif rtype == "MedicationRequest":
-            _upsert_medication(cursor, resource, res_id,
-                               internal_pat_id, already_exists)
-        elif rtype == "Observation":
-            _upsert_observation(cursor, resource, res_id,
-                                internal_pat_id, already_exists)
-        elif rtype == "AllergyIntolerance":
-            _upsert_allergy(cursor, resource, res_id,
-                            internal_pat_id, already_exists)
-        elif rtype == "Procedure":
-            _upsert_procedure(cursor, resource, res_id,
-                              internal_pat_id, already_exists)
-        elif rtype == "Immunization":
-            _upsert_immunization(cursor, resource, res_id,
-                                 internal_pat_id, already_exists)
-        elif rtype == "DiagnosticReport":
-            _upsert_diagnostic_report(cursor, resource, res_id,
-                                      internal_pat_id, already_exists)
-        elif rtype == "ImagingStudy":
-            _upsert_imaging_study(cursor, resource, res_id,
-                                  internal_pat_id, already_exists)
-        elif rtype == "CarePlan":
-            _upsert_care_plan(cursor, resource, res_id,
-                              internal_pat_id, already_exists)
-        elif rtype == "CareTeam":
-            _upsert_care_team(cursor, resource, res_id,
-                              internal_pat_id, already_exists)
-        elif rtype == "Device":
-            _upsert_device(cursor, resource, res_id,
-                           internal_pat_id, already_exists)
-
+        handlers[rtype](cursor, resource, res_id, internal_pat_id, already_exists)
         _log_sync(cursor, rtype, res_id)
-
     except Exception as e:
         log.error("Error %s %s: %s", rtype, res_id, e)
 
 
 def _log_sync(cursor, rtype: str, res_id: str):
     cursor.execute(
-        """
-        INSERT INTO fhir_sync_log (id, resource_type, resource_id, status)
+        f"""
+        INSERT INTO {TBL_SYNC_LOG} (id, resource_type, resource_id, status)
         VALUES (%s, %s, %s, 'success')
         ON DUPLICATE KEY UPDATE status='success', imported_at=NOW()
         """,
@@ -282,7 +376,7 @@ def _upsert_encounter(cursor, res, res_id, pat_id, exists):
 
     if exists:
         cursor.execute(
-            """UPDATE encounters SET
+            f"""UPDATE {TBL_ENCOUNTERS} SET
                encounter_type=%s, status=%s, encounter_class=%s,
                start_date=%s, end_date=%s, reason=%s, practitioner_name=%s
                WHERE external_id=%s""",
@@ -294,7 +388,7 @@ def _upsert_encounter(cursor, res, res_id, pat_id, exists):
         )
     else:
         cursor.execute(
-            """INSERT INTO encounters
+            f"""INSERT INTO {TBL_ENCOUNTERS}
                (id,patient_id,external_id,source_system,
                 encounter_type,status,start_date,end_date,
                 reason,practitioner_name,encounter_class)
@@ -323,7 +417,7 @@ def _upsert_condition(cursor, res, res_id, pat_id, exists):
     )
     if exists:
         cursor.execute(
-            """UPDATE conditions SET
+            f"""UPDATE {TBL_CONDITIONS} SET
                code=%s,code_system=%s,description=%s,status=%s,
                severity=%s,recorded_by=%s,onset_date=%s,abatement_date=%s
                WHERE external_id=%s""",
@@ -331,7 +425,7 @@ def _upsert_condition(cursor, res, res_id, pat_id, exists):
         )
     else:
         cursor.execute(
-            """INSERT INTO conditions
+            f"""INSERT INTO {TBL_CONDITIONS}
                (id,patient_id,external_id,code,code_system,description,
                 status,severity,recorded_by,onset_date,abatement_date)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
@@ -358,7 +452,7 @@ def _upsert_medication(cursor, res, res_id, pat_id, exists):
     )
     if exists:
         cursor.execute(
-            """UPDATE medications SET
+            f"""UPDATE {TBL_MEDICATIONS} SET
                code=%s,code_system=%s,description=%s,dosage=%s,
                frequency=%s,prescriber=%s,instructions=%s,status=%s,start_date=%s
                WHERE external_id=%s""",
@@ -366,7 +460,7 @@ def _upsert_medication(cursor, res, res_id, pat_id, exists):
         )
     else:
         cursor.execute(
-            """INSERT INTO medications
+            f"""INSERT INTO {TBL_MEDICATIONS}
                (id,patient_id,external_id,code,code_system,description,
                 dosage,frequency,prescriber,instructions,status,start_date)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
@@ -401,7 +495,7 @@ def _upsert_observation(cursor, res, res_id, pat_id, exists):
     )
     if exists:
         cursor.execute(
-            """UPDATE observations SET
+            f"""UPDATE {TBL_OBSERVATIONS} SET
                code=%s,code_system=%s,description=%s,value=%s,
                value_high=%s,value_low=%s,unit=%s,interpretation=%s,
                category=%s,status=%s,effective_date=%s
@@ -410,7 +504,7 @@ def _upsert_observation(cursor, res, res_id, pat_id, exists):
         )
     else:
         cursor.execute(
-            """INSERT INTO observations
+            f"""INSERT INTO {TBL_OBSERVATIONS}
                (id,patient_id,external_id,code,code_system,description,
                 value,value_high,value_low,unit,interpretation,category,
                 status,effective_date)
@@ -440,7 +534,7 @@ def _upsert_allergy(cursor, res, res_id, pat_id, exists):
     )
     if exists:
         cursor.execute(
-            """UPDATE allergies SET
+            f"""UPDATE {TBL_ALLERGIES} SET
                code=%s,code_system=%s,description=%s,severity=%s,
                status=%s,onset_date=%s,reaction=%s,
                last_occurrence=%s,recorded_by=%s
@@ -449,7 +543,7 @@ def _upsert_allergy(cursor, res, res_id, pat_id, exists):
         )
     else:
         cursor.execute(
-            """INSERT INTO allergies
+            f"""INSERT INTO {TBL_ALLERGIES}
                (id,patient_id,external_id,code,code_system,description,
                 severity,status,onset_date,reaction,last_occurrence,recorded_by)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
@@ -477,7 +571,7 @@ def _upsert_procedure(cursor, res, res_id, pat_id, exists):
     )
     if exists:
         cursor.execute(
-            """UPDATE procedures SET
+            f"""UPDATE {TBL_PROCEDURES} SET
                code=%s,code_system=%s,description=%s,status=%s,
                performed_date=%s,performer=%s,reason=%s,body_site=%s
                WHERE external_id=%s""",
@@ -485,7 +579,7 @@ def _upsert_procedure(cursor, res, res_id, pat_id, exists):
         )
     else:
         cursor.execute(
-            """INSERT INTO procedures
+            f"""INSERT INTO {TBL_PROCEDURES}
                (id,patient_id,external_id,code,code_system,description,
                 status,performed_date,performer,reason,body_site)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
@@ -510,7 +604,7 @@ def _upsert_immunization(cursor, res, res_id, pat_id, exists):
     )
     if exists:
         cursor.execute(
-            """UPDATE immunizations SET
+            f"""UPDATE {TBL_IMMUNIZATIONS} SET
                code=%s,code_system=%s,description=%s,status=%s,
                occurrence_date=%s,lot_number=%s,manufacturer=%s,
                site=%s,route=%s,performer=%s
@@ -519,7 +613,7 @@ def _upsert_immunization(cursor, res, res_id, pat_id, exists):
         )
     else:
         cursor.execute(
-            """INSERT INTO immunizations
+            f"""INSERT INTO {TBL_IMMUNIZATIONS}
                (id,patient_id,external_id,code,code_system,description,
                 status,occurrence_date,lot_number,manufacturer,site,route,performer)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
@@ -547,7 +641,7 @@ def _upsert_diagnostic_report(cursor, res, res_id, pat_id, exists):
     )
     if exists:
         cursor.execute(
-            """UPDATE diagnostic_reports SET
+            f"""UPDATE {TBL_DIAG_REPORTS} SET
                code=%s,code_system=%s,description=%s,category=%s,
                status=%s,effective_date=%s,issued_date=%s,
                performer=%s,conclusion=%s
@@ -556,7 +650,7 @@ def _upsert_diagnostic_report(cursor, res, res_id, pat_id, exists):
         )
     else:
         cursor.execute(
-            """INSERT INTO diagnostic_reports
+            f"""INSERT INTO {TBL_DIAG_REPORTS}
                (id,patient_id,external_id,code,code_system,description,
                 category,status,effective_date,issued_date,performer,conclusion)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
@@ -588,7 +682,7 @@ def _upsert_imaging_study(cursor, res, res_id, pat_id, exists):
     )
     if exists:
         cursor.execute(
-            """UPDATE imaging_studies SET
+            f"""UPDATE {TBL_IMAGING} SET
                modality=%s,description=%s,status=%s,started_date=%s,
                number_series=%s,number_instances=%s,body_site=%s,referrer=%s
                WHERE external_id=%s""",
@@ -596,7 +690,7 @@ def _upsert_imaging_study(cursor, res, res_id, pat_id, exists):
         )
     else:
         cursor.execute(
-            """INSERT INTO imaging_studies
+            f"""INSERT INTO {TBL_IMAGING}
                (id,patient_id,external_id,modality,description,status,
                 started_date,number_series,number_instances,body_site,referrer)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
@@ -619,7 +713,7 @@ def _upsert_care_plan(cursor, res, res_id, pat_id, exists):
     )
     if exists:
         cursor.execute(
-            """UPDATE care_plans SET
+            f"""UPDATE {TBL_CARE_PLANS} SET
                title=%s,description=%s,status=%s,intent=%s,
                category=%s,start_date=%s,end_date=%s
                WHERE external_id=%s""",
@@ -627,7 +721,7 @@ def _upsert_care_plan(cursor, res, res_id, pat_id, exists):
         )
     else:
         cursor.execute(
-            """INSERT INTO care_plans
+            f"""INSERT INTO {TBL_CARE_PLANS}
                (id,patient_id,external_id,title,description,
                 status,intent,category,start_date,end_date)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
@@ -642,7 +736,7 @@ def _upsert_care_team(cursor, res, res_id, pat_id, exists):
 
     if exists:
         cursor.execute(
-            """UPDATE care_teams SET
+            f"""UPDATE {TBL_CARE_TEAMS} SET
                name=%s,status=%s,category=%s,start_date=%s,end_date=%s
                WHERE external_id=%s""",
             (_truncate(res.get("name",""),300),
@@ -652,15 +746,15 @@ def _upsert_care_team(cursor, res, res_id, pat_id, exists):
              _datetime(period.get("end")),
              res_id)
         )
-        cursor.execute("SELECT id FROM care_teams WHERE external_id=%s", (res_id,))
+        cursor.execute(f"SELECT id FROM {TBL_CARE_TEAMS} WHERE external_id=%s", (res_id,))
         care_team_id = cursor.fetchone()[0]
         cursor.execute(
-            "DELETE FROM care_team_members WHERE care_team_id=%s", (care_team_id,)
+            f"DELETE FROM {TBL_CT_MEMBERS} WHERE care_team_id=%s", (care_team_id,)
         )
     else:
         care_team_id = str(uuid.uuid4())
         cursor.execute(
-            """INSERT INTO care_teams
+            f"""INSERT INTO {TBL_CARE_TEAMS}
                (id,patient_id,external_id,name,status,category,start_date,end_date)
                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
             (care_team_id, pat_id, res_id,
@@ -678,7 +772,7 @@ def _upsert_care_team(cursor, res, res_id, pat_id, exists):
         m_ref  = member.get("reference","")
         m_type = m_ref.split("/")[0] if m_ref else ""
         cursor.execute(
-            """INSERT INTO care_team_members
+            f"""INSERT INTO {TBL_CT_MEMBERS}
                (id,care_team_id,patient_id,role,member_name,member_type)
                VALUES (%s,%s,%s,%s,%s,%s)""",
             (str(uuid.uuid4()), care_team_id, pat_id,
@@ -708,7 +802,7 @@ def _upsert_device(cursor, res, res_id, pat_id, exists):
     )
     if exists:
         cursor.execute(
-            """UPDATE devices SET
+            f"""UPDATE {TBL_DEVICES} SET
                code=%s,code_system=%s,description=%s,status=%s,
                manufacturer=%s,model=%s,lot_number=%s,serial_number=%s,
                expiration_date=%s,udi=%s
@@ -717,7 +811,7 @@ def _upsert_device(cursor, res, res_id, pat_id, exists):
         )
     else:
         cursor.execute(
-            """INSERT INTO devices
+            f"""INSERT INTO {TBL_DEVICES}
                (id,patient_id,external_id,code,code_system,description,
                 status,manufacturer,model,lot_number,serial_number,
                 expiration_date,udi)
@@ -734,7 +828,8 @@ def sync_cycle():
         return
 
     state = load_state()
-    log.info("Iniciando ciclo de sincronización — FHIR: %s", FHIR_BASE_URL)
+    log.info("Iniciando ciclo de sincronización — Clínica: %s — FHIR: %s",
+             CLINIC.get("clinic_id", "?"), FHIR_BASE_URL)
 
     try:
         conn   = mysql.connector.connect(**DB_CONFIG)
@@ -746,12 +841,9 @@ def sync_cycle():
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
     for rtype in RESOURCE_TYPES:
-        since = state.get(rtype)
-        if rtype == "Patient":
-            extra_params = {"deceased:not": "true"}
-        else:
-            extra_params = {"patient.deceased:not": "true"}
-        resources = fetch_updated_resources(rtype, since, extra_params=extra_params)
+        since        = state.get(rtype)
+        extra_params = _deceased_filter_params(rtype)
+        resources    = fetch_updated_resources(rtype, since, extra_params=extra_params)
 
         if not resources:
             log.info("  %s — sin cambios", rtype)
@@ -771,7 +863,7 @@ def sync_cycle():
                 if not pat_ext_id:
                     continue
                 cursor.execute(
-                    "SELECT id FROM patients WHERE external_id=%s", (pat_ext_id,)
+                    f"SELECT id FROM {TBL_PATIENTS} WHERE external_id=%s", (pat_ext_id,)
                 )
                 row = cursor.fetchone()
                 if not row:
@@ -792,7 +884,8 @@ def sync_cycle():
 
 
 if __name__ == "__main__":
-    log.info("Sync service iniciado. Intervalo: %ds", SYNC_INTERVAL_SECS)
+    log.info("Sync service iniciado. Clínica: %s — Intervalo: %ds",
+              CLINIC.get("clinic_id", "?"), SYNC_INTERVAL_SECS)
     while True:
         try:
             sync_cycle()
