@@ -861,7 +861,7 @@ def sync_cycle():
         log.error("Error conectando a MariaDB: %s", e)
         return
 
-    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     for rtype in RESOURCE_TYPES:
         since = state.get(rtype)
