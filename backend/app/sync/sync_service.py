@@ -28,10 +28,6 @@ import mysql.connector
 
 # ── Config ────────────────────────────────────────────────────────────────────
 load_dotenv(Path(__file__).parent.parent.parent / '.env')
-
-FHIR_BASE_URL       = os.getenv('FHIR_BASE_URL', '').rstrip('/')
-SYNC_INTERVAL_SECS  = int(os.getenv('FHIR_SYNC_INTERVAL_MINUTES', '5')) * 60
-PAGE_SIZE           = int(os.getenv('FHIR_PAGE_SIZE', '50'))
 STATE_FILE          = Path(__file__).parent.parent.parent / 'fhir_sync_state.json'
 CLINIC_CONFIG_PATH  = Path(os.getenv(
     'CLINIC_CONFIG',
@@ -174,13 +170,13 @@ def save_state(state: dict):
 
 # ── Cliente FHIR ──────────────────────────────────────────────────────────────
 
-def fetch_updated_resources(resource_type: str, since: str | None, extra_params: dict = None) -> list:
+def fetch_updated_resources(resource_type: str, since: str | None, base_url: str, page_size: int, extra_params: dict = None) -> list:
     """
     Descarga todos los recursos de un tipo actualizados después de `since`.
     Maneja paginación automáticamente.
     """
     params = {
-        "_count":  PAGE_SIZE,
+        "_count":  page_size,
         "_sort":   "_lastUpdated",
     }
     if since:
@@ -189,7 +185,7 @@ def fetch_updated_resources(resource_type: str, since: str | None, extra_params:
     if extra_params:
         params.update(extra_params)
 
-    url      = f"{FHIR_BASE_URL}/{resource_type}"
+    url      = f"{base_url}/{resource_type}"
     resources = []
     page      = 1
 
@@ -823,13 +819,18 @@ def _upsert_device(cursor, res, res_id, pat_id, exists):
 # ── Loop principal ────────────────────────────────────────────────────────────
 
 def sync_cycle():
-    if not FHIR_BASE_URL:
+    load_dotenv(Path(__file__).parent.parent.parent / '.env', override=True)
+    fhir_url      = os.getenv('FHIR_BASE_URL', '').rstrip('/')
+    sync_interval = int(os.getenv('FHIR_SYNC_INTERVAL_MINUTES', '5')) * 60
+    page_size     = int(os.getenv('FHIR_PAGE_SIZE', '50'))
+
+    if not fhir_url:
         log.error("FHIR_BASE_URL no configurada en .env")
-        return
+        return sync_interval
 
     state = load_state()
     log.info("Iniciando ciclo de sincronización — Clínica: %s — FHIR: %s",
-             CLINIC.get("clinic_id", "?"), FHIR_BASE_URL)
+             CLINIC.get("clinic_id", "?"), fhir_url)
 
     try:
         conn   = mysql.connector.connect(**DB_CONFIG)
@@ -843,11 +844,12 @@ def sync_cycle():
     for rtype in RESOURCE_TYPES:
         since        = state.get(rtype)
         extra_params = _deceased_filter_params(rtype)
-        resources    = fetch_updated_resources(rtype, since, extra_params=extra_params)
+        resources    = fetch_updated_resources(rtype, since, fhir_url, page_size, extra_params=extra_params)
 
         if not resources:
             log.info("  %s — sin cambios", rtype)
             state[rtype] = now_iso
+            save_state(state)
             continue
 
         log.info("  %s — procesando %d recursos", rtype, len(resources))
@@ -875,20 +877,23 @@ def sync_cycle():
 
         conn.commit()
         state[rtype] = now_iso
+        save_state(state)
         log.info("  %s — %d procesados", rtype, count)
 
     cursor.close()
     conn.close()
-    save_state(state)
-    log.info("Ciclo completado. Próxima sincronización en %ds", SYNC_INTERVAL_SECS)
+    log.info("Ciclo completado. Próxima sincronización en %ds", sync_interval)
+    return sync_interval
 
 
 if __name__ == "__main__":
+    initial_sync_interval = int(os.getenv('FHIR_SYNC_INTERVAL_MINUTES', '5')) * 60
     log.info("Sync service iniciado. Clínica: %s — Intervalo: %ds",
-              CLINIC.get("clinic_id", "?"), SYNC_INTERVAL_SECS)
+              CLINIC.get("clinic_id", "?"), initial_sync_interval)
     while True:
         try:
-            sync_cycle()
+            sync_interval = sync_cycle()
         except Exception as e:
             log.error("Error inesperado en ciclo: %s", e)
-        time.sleep(SYNC_INTERVAL_SECS)
+            sync_interval = initial_sync_interval
+        time.sleep(sync_interval)
