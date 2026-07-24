@@ -170,51 +170,83 @@ def save_state(state: dict):
 
 # ── Cliente FHIR ──────────────────────────────────────────────────────────────
 
-def fetch_updated_resources(resource_type: str, since: str | None, base_url: str, page_size: int, extra_params: dict = None) -> list:
+def fetch_page(url: str, params: dict | None, timeout: int = 30) -> dict:
+    """Descarga una sola página FHIR y retorna el bundle."""
+    resp = requests.get(url, params=params, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def sync_resource_type(rtype: str, since: str | None, fhir_url: str,
+                       page_size: int, conn, cursor) -> int:
     """
-    Descarga todos los recursos de un tipo actualizados después de `since`.
-    Maneja paginación automáticamente.
+    Descarga y procesa un tipo de recurso página por página,
+    haciendo commit después de cada página.
     """
-    params = {
-        "_count":  page_size,
-        "_sort":   "_lastUpdated",
-    }
+    params = {"_count": page_size, "_sort": "_lastUpdated"}
     if since:
         params["_lastUpdated"] = f"gt{since}"
 
-    if extra_params:
-        params.update(extra_params)
+    extra = _deceased_filter_params(rtype)
+    if extra:
+        params.update(extra)
 
-    url      = f"{base_url}/{resource_type}"
-    resources = []
-    page      = 1
+    url = f"{fhir_url}/{rtype}"
+    page = 1
+    count = 0
 
     while url:
         try:
-            resp = requests.get(url, params=params if page == 1 else None,
-                                timeout=30)
-            resp.raise_for_status()
-            bundle = resp.json()
+            bundle = fetch_page(url, params if page == 1 else None)
         except Exception as e:
-            log.error("Error consultando %s: %s", resource_type, e)
-            break
+            log.error("Error consultando %s página %d: %s", rtype, page, e)
+            raise
 
         entries = bundle.get("entry", [])
-        resources.extend(e.get("resource", {}) for e in entries
-                         if e.get("resource"))
+        resources = [e.get("resource", {}) for e in entries if e.get("resource")]
 
-        log.info("  %s — página %d: %d recursos",
-                 resource_type, page, len(entries))
+        log.info("  %s — página %d: %d recursos", rtype, page, len(resources))
 
-        # Siguiente página
-        url  = None
+        for resource in resources:
+            if rtype == "Patient":
+                result = _get_or_create_patient(cursor, resource)
+                if result:
+                    count += 1
+            else:
+                pat_ext_id = _patient_ref(resource)
+                if not pat_ext_id:
+                    continue
+                cursor.execute(
+                    f"SELECT id FROM {TBL_PATIENTS} WHERE external_id=%s",
+                    (pat_ext_id,)
+                )
+                row = cursor.fetchone()
+                if not row:
+                    continue
+                _upsert_clinical(cursor, resource, row[0])
+                count += 1
+
+        conn.commit()
+
+        url = None
         page += 1
         for link in bundle.get("link", []):
             if link.get("relation") == "next":
                 url = link.get("url")
                 break
 
-    return resources
+    return count
+
+
+# ── Helpers de mapeo FHIR ─────────────────────────────────────────────────────
+# (idénticos a los de fhir_adapter.py, reusados desde ahí para no duplicar)
+
+from app.fhir.fhir_adapter import (
+    _gender, _date, _datetime, _name, _identifier,
+    _code_display, _code_value, _code_system,
+    _extract_ref_id, _patient_ref, _truncate,
+    _extract_patient_extended,
+)
 
 
 def _deceased_filter_params(resource_type: str) -> dict | None:
@@ -231,16 +263,6 @@ def _deceased_filter_params(resource_type: str) -> dict | None:
         return {"patient.deceased:not": "true"}
     return None
 
-
-# ── Helpers de mapeo FHIR ─────────────────────────────────────────────────────
-# (idénticos a los de fhir_adapter.py, reusados desde ahí para no duplicar)
-
-from app.fhir.fhir_adapter import (
-    _gender, _date, _datetime, _name, _identifier,
-    _code_display, _code_value, _code_system,
-    _extract_ref_id, _patient_ref, _truncate,
-    _extract_patient_extended,
-)
 
 
 def _get_or_create_patient(cursor, resource: dict) -> str | None:
@@ -842,43 +864,17 @@ def sync_cycle():
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
     for rtype in RESOURCE_TYPES:
-        since        = state.get(rtype)
-        extra_params = _deceased_filter_params(rtype)
-        resources    = fetch_updated_resources(rtype, since, fhir_url, page_size, extra_params=extra_params)
+        since = state.get(rtype)
+        log.info("  %s — sincronizando desde %s", rtype, since or "inicio")
 
-        if not resources:
-            log.info("  %s — sin cambios", rtype)
+        try:
+            count = sync_resource_type(rtype, since, fhir_url, page_size, conn, cursor)
             state[rtype] = now_iso
             save_state(state)
+            log.info("  %s — completado: %d procesados", rtype, count)
+        except Exception as e:
+            log.error("  %s — error en sincronización: %s", rtype, e)
             continue
-
-        log.info("  %s — procesando %d recursos", rtype, len(resources))
-        count = 0
-
-        for resource in resources:
-            if rtype == "Patient":
-                result = _get_or_create_patient(cursor, resource)
-                if result:
-                    count += 1
-            else:
-                pat_ext_id = _patient_ref(resource)
-                if not pat_ext_id:
-                    continue
-                cursor.execute(
-                    f"SELECT id FROM {TBL_PATIENTS} WHERE external_id=%s", (pat_ext_id,)
-                )
-                row = cursor.fetchone()
-                if not row:
-                    log.debug("Paciente %s no encontrado, omitiendo %s",
-                              pat_ext_id, rtype)
-                    continue
-                _upsert_clinical(cursor, resource, row[0])
-                count += 1
-
-        conn.commit()
-        state[rtype] = now_iso
-        save_state(state)
-        log.info("  %s — %d procesados", rtype, count)
 
     cursor.close()
     conn.close()
