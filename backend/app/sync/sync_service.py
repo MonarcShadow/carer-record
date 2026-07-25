@@ -165,6 +165,51 @@ def load_state() -> dict:
             pass
     return {}
 
+
+def rebuild_state_from_db(cursor) -> dict:
+    """
+    Reconstruye el timestamp de última sync por tipo de recurso
+    leyendo el máximo imported_at de fhir_sync_log.
+    Evita re-sincronizar todo cuando el state se pierde.
+    """
+    from datetime import timedelta
+
+    cursor.execute(f"""
+        SELECT resource_type, MAX(imported_at)
+        FROM {TBL_SYNC_LOG}
+        GROUP BY resource_type
+    """)
+
+    state = {}
+    rtype_map = {
+        "Patient":            "Patient",
+        "Encounter":          "Encounter",
+        "Condition":          "Condition",
+        "MedicationRequest":  "MedicationRequest",
+        "Observation":        "Observation",
+        "AllergyIntolerance": "AllergyIntolerance",
+        "Procedure":          "Procedure",
+        "Immunization":       "Immunization",
+        "DiagnosticReport":   "DiagnosticReport",
+        "ImagingStudy":       "ImagingStudy",
+        "CarePlan":           "CarePlan",
+        "CareTeam":           "CareTeam",
+        "Device":             "Device",
+    }
+
+    for row in cursor.fetchall():
+        rtype, max_date = row
+        if rtype in rtype_map and max_date:
+            # Resta 1 minuto como margen de seguridad
+            safe_date = (max_date - timedelta(minutes=1)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            )
+            state[rtype] = safe_date
+            log.info("  State reconstruido: %s → %s", rtype, safe_date)
+
+    return state
+
+
 def save_state(state: dict):
     STATE_FILE.write_text(json.dumps(state, indent=2))
 
@@ -851,6 +896,22 @@ def sync_cycle():
         return sync_interval
 
     state = load_state()
+
+    # Si el state está vacío pero la DB tiene datos, reconstruir desde fhir_sync_log
+    if not state:
+        log.info("State vacío — reconstruyendo desde fhir_sync_log...")
+        try:
+            conn_check   = mysql.connector.connect(**DB_CONFIG)
+            cursor_check = conn_check.cursor()
+            state        = rebuild_state_from_db(cursor_check)
+            cursor_check.close()
+            conn_check.close()
+            if state:
+                save_state(state)
+                log.info("State reconstruido con %d tipos de recurso", len(state))
+        except Exception as e:
+            log.error("Error reconstruyendo state: %s", e)
+
     log.info("Iniciando ciclo de sincronización — Clínica: %s — FHIR: %s",
              CLINIC.get("clinic_id", "?"), fhir_url)
 
