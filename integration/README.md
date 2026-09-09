@@ -3,11 +3,16 @@
 Este módulo implementa el patrón Adaptador para normalizar datos de distintos
 sistemas clínicos al modelo interno de Carer Record.
 
+> Esta guía describe la implementación actual conectada directamente a MariaDB.
+> La arquitectura objetivo conserva los adaptadores, pero mueve la ingesta y la
+> persistencia a FastAPI y Supabase. Ver el
+> [`plan de migración`](../infra/MIGRATION_TO_SUPABASE.md).
+
 ---
 
-## Arquitectura
+## Arquitectura actual
 
-```
+```text
 Sistema hospitalario (FHIR R4 / HL7v2)
         ↓
    Adaptador (integration/adapters/)
@@ -17,8 +22,10 @@ Sistema hospitalario (FHIR R4 / HL7v2)
    FastAPI → App Flutter
 ```
 
-Los adaptadores son el único punto de contacto con sistemas externos.
-El resto de la aplicación trabaja exclusivamente con el modelo interno.
+Esta es una de las rutas de integración actuales. El backend también contiene
+un sincronizador y un importador FHIR en `backend/app/sync/` y
+`backend/app/fhir/`. La migración consolidará estas rutas para que el resto de
+la aplicación trabaje exclusivamente con el modelo interno.
 
 ---
 
@@ -64,7 +71,7 @@ java -jar synthea.jar -p 100 -s 42
 Parámetros utilizados en el proyecto:
 
 | Parámetro | Valor | Descripción |
-|---|---|---|
+| --- | --- | --- |
 | `-p` | `100` | Número de pacientes a generar |
 | `-s` | `42` | Semilla aleatoria — garantiza reproducibilidad |
 
@@ -87,16 +94,18 @@ ya importados sin generar duplicados.
 
 ---
 
-## Configuración del adaptador FHIR
+## Configuración actual del adaptador FHIR
 
-Las credenciales de la base de datos se configuran directamente en
-`adapters/fhir_adapter.py` en la sección `DB_CONFIG`, o pueden externalizarse
-a variables de entorno en fases posteriores del proyecto.
+El adaptador heredado todavía abre una conexión directa a MariaDB mediante
+`DB_CONFIG`. Durante la migración, esta dependencia será reemplazada por una
+capa de ingesta de FastAPI y configuración por hospital/fuente de datos.
 
 ---
 
 ## Trabajo futuro
 
-- Sincronización automática al detectar nuevos bundles FHIR
-- Soporte para recursos `Encounter` y `Observation`
-- Listener HL7v2 MLLP para integración en tiempo real
+- Migrar la persistencia de MariaDB a PostgreSQL de Supabase.
+- Configurar múltiples hospitales y fuentes de datos.
+- Enviar la información normalizada a través de FastAPI.
+- Completar la integración HL7v2 mediante Mirth o un gateway equivalente.
+- Incorporar archivos CSV/JSON/XML y registro manual como fuentes adicionales.

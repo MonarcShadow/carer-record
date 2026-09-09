@@ -88,7 +88,7 @@ cloudflared tunnel run carer-record-dev
 
 La URL pública asignada aparece en la salida:
 
-```
+```text
 Your quick Tunnel has been created! Visit it at:
 https://<nombre-generado>.cfargotunnel.com
 ```
@@ -114,7 +114,7 @@ systemctl start cloudflared
 Una vez activo el túnel, comunicar la URL al equipo para que la agreguen en su
 archivo `.env`:
 
-```
+```text
 BACKEND_URL=https://<nombre-generado>.cfargotunnel.com
 ```
 
@@ -124,7 +124,7 @@ La URL de un Named Tunnel **es permanente** — no cambia entre reinicios.
 
 ## Arquitectura de conectividad
 
-```
+```text
 Teléfono (app Flutter)
         │  HTTPS
         ▼
@@ -139,7 +139,7 @@ por lo que no se requiere IP pública ni apertura de puertos en el router.
 ## Referencia rápida de comandos
 
 | Acción | Comando |
-|---|---|
+| --- | --- |
 | Ver túneles creados | `cloudflared tunnel list` |
 | Ver estado del servicio | `systemctl status cloudflared` |
 | Ver logs en tiempo real | `journalctl -u cloudflared -f` |

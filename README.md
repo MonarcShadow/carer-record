@@ -8,55 +8,57 @@ de turno. Diseñada para funcionar en entornos con conectividad intermitente.
 
 ## Tecnologías principales
 
-| Capa | Tecnología |
-|---|---|
-| App móvil | Flutter (Android) |
-| Backend API | FastAPI (Python) |
-| Base de datos | MariaDB |
-| Almacenamiento local | Drift + SQLite |
-| Voz a texto | On-device (sin conexión) |
-| Acceso remoto al servidor | Tailscale |
-| Control de versiones | GitHub |
+| Capa | Estado actual | Diseño objetivo |
+| --- | --- | --- |
+| App móvil | Flutter (Android) | Flutter + Drift/SQLite |
+| Backend API | FastAPI (Python) | FastAPI desplegado en cloud |
+| Base de datos | MariaDB en Raspberry Pi | PostgreSQL de Supabase |
+| Autenticación | JWT propio | Supabase Auth |
+| Archivos y audio | Disco local del servidor | Supabase Storage |
+| Voz a texto | On-device y worker Python | On-device con worker opcional |
+| Acceso remoto | Cloudflare Tunnel | URL HTTPS estable del backend |
+| Integración | Adaptadores FHIR y HL7v2 | Gateway multihospital configurable |
+
+La arquitectura objetivo y la estrategia de migración se documentan en
+[`infra/MIGRATION_TO_SUPABASE.md`](infra/MIGRATION_TO_SUPABASE.md). Durante la
+transición, el sistema continúa utilizando MariaDB y la infraestructura de la
+Raspberry Pi.
 
 ---
 
 ## Estructura del repositorio
 
-```
+```text
 carer-record/
 ├── app/                        # Aplicación Flutter
 │   ├── lib/
-│   │   ├── core/               # Constantes, errores, tema, utilidades
+│   │   ├── core/               # Configuración y tema
 │   │   ├── data/
-│   │   │   ├── local/          # Base de datos local (Drift + SQLite)
+│   │   │   ├── local/          # Preferencias locales; Drift está pendiente
 │   │   │   ├── remote/         # Cliente HTTP hacia el backend
-│   │   │   └── sync/           # Lógica offline-first / sincronización
-│   │   ├── domain/             # Modelos, repositorios, casos de uso
+│   │   │   └── services/       # Grabación y transcripción
 │   │   └── presentation/       # Pantallas y widgets
 │   └── pubspec.yaml
 ├── backend/                    # API FastAPI
 │   ├── app/
-│   │   ├── api/v1/routes/      # Rutas: auth, patients, notes, sync
+│   │   ├── api/v1/routes/      # Rutas: auth, users, patients y notes
 │   │   ├── core/               # Configuración, seguridad, base de datos
-│   │   ├── models/             # Modelos ORM (SQLAlchemy)
-│   │   ├── schemas/            # DTOs Pydantic
-│   │   └── services/           # Lógica de negocio
-│   ├── requirements.txt
-│   └── systemd/                # Servicio del sistema para producción
-├── ai/                         # Módulo de voz a texto (on-device)
-│   └── voice_to_text/
+│   │   ├── fhir/               # Importador y mapeadores FHIR
+│   │   ├── sync/               # Sincronización incremental FHIR
+│   │   └── workers/            # Worker de transcripción
+│   └── requirements.txt
 ├── integration/                # Adaptadores para sistemas hospitalarios
 │   ├── adapters/
 │   │   ├── fhir_adapter.py     # Importación desde FHIR R4
 │   │   └── hl7v2_adapter.py    # Integración HL7v2 MLLP (en desarrollo)
 │   └── README.md               # Instrucciones de integración
-├── infra/                      # Infraestructura y scripts
+├── infra/                      # Infraestructura actual y plan de migración
+│   ├── cloudflare/              # Configuración del túnel actual
+│   ├── README.md                # Operación actual en Raspberry Pi
+│   ├── MIGRATION_TO_SUPABASE.md # Plan de migración a Supabase
 │   └── scripts/
 │       └── setup_integration.sh
-└── docs/                       # Documentación del proyecto
-    ├── architecture.md
-    ├── adr/                    # Architecture Decision Records
-    └── thesis/                 # Archivos LaTeX del informe
+└── README.md
 ```
 
 ---
@@ -68,12 +70,12 @@ carer-record/
 - [Flutter SDK](https://docs.flutter.dev/get-started/install) ≥ 3.x
 - Python ≥ 3.11
 - MariaDB ≥ 10.x
-- Acceso al servidor de desarrollo vía Tailscale (coordinar con el equipo)
+- URL de Cloudflare Tunnel del servidor actual
 
 ### 1. Clonar el repositorio
 
 ```bash
-git clone [https://github.com/<org>/carer-record.git](https://github.com/MonarcShadow/carer-record.git)
+git clone https://github.com/MonarcShadow/carer-record.git
 cd carer-record
 ```
 
@@ -88,11 +90,23 @@ source venv/bin/activate          # En Linux/macOS
 pip install -r requirements.txt
 ```
 
-Crear el archivo de variables de entorno:
+El archivo `backend/requirements.txt` contiene las dependencias de la API. Los
+componentes opcionales de la infraestructura actual requieren paquetes
+adicionales:
 
 ```bash
-cp .env.example .env
-# Editar .env con las credenciales del servidor de desarrollo
+# Sincronización y adaptadores FHIR/HL7v2
+pip install mysql-connector-python hl7apy
+
+# Worker de transcripción en el servidor
+pip install faster-whisper
+```
+
+Crear `backend/.env` con las variables del entorno actual:
+
+```bash
+touch .env
+# Configurar DATABASE_URL y las variables del sincronizador FHIR
 ```
 
 ### 3. Inicializar la base de datos
@@ -128,17 +142,37 @@ flutter run
 
 ---
 
-## Flujo de datos
+## Flujo de datos actual
 
-```
+```text
 Teléfono (Flutter)
     │
-    ├── Con conexión  ──▶  FastAPI  ──▶  MariaDB (servidor)
-    │
-    └── Sin conexión  ──▶  SQLite local (Drift)
-                               │
-                               └── Sync al reconectar ──▶ FastAPI
+    └── HTTPS ──▶ Cloudflare Tunnel ──▶ FastAPI ──▶ MariaDB
 ```
+
+La persistencia offline con Drift/SQLite pertenece al diseño objetivo y todavía
+no está implementada en la app actual.
+
+## Flujo de datos objetivo
+
+```text
+FHIR / HL7v2 / archivos / registro manual
+                    │
+                    ▼
+                 FastAPI
+        integración + API + procesos de IA
+                    │
+                    ▼
+        Supabase/PostgreSQL/Auth/Storage
+                    ▲
+                    │
+           Flutter + Drift/SQLite
+```
+
+Supabase proporciona la infraestructura administrada de datos. FastAPI mantiene
+la lógica de integración y negocio, y Flutter continúa siendo el frontend móvil.
+Los datos importados desde hospitales serán inicialmente de solo lectura; los
+eventos creados en Carer Record se almacenarán en la plataforma propia.
 
 ---
 
@@ -163,7 +197,7 @@ Ver [`integration/README.md`](integration/README.md) para instrucciones detallad
 
 ### Ramas
 
-```
+```text
 main          ← producción / entregables estables
 dev           ← integración del equipo
 feature/<nombre>   ← desarrollo de funcionalidades
@@ -174,7 +208,7 @@ fix/<nombre>       ← correcciones
 
 Usar prefijos descriptivos:
 
-```
+```text
 feat: agrega pantalla de notas de turno
 fix: corrige error en sincronización offline
 docs: actualiza README de integración
@@ -199,10 +233,16 @@ Equipo de cuatro integrantes.
 ## Estado del proyecto
 
 | Fase | Descripción | Estado |
-|---|---|---|
-| 1 | Infraestructura y servidor | ✅ Completado |
-| 2 | Autenticación y esqueleto Flutter | 🔄 En progreso |
-| 3 | Funcionalidad central (notas, turnos) | ⏳ Pendiente |
-| 4 | Sincronización offline | ⏳ Pendiente |
-| 5 | Voz a texto on-device | ⏳ Pendiente |
-| 6 | Integración con sistemas hospitalarios | 🔄 En progreso |
+| --- | --- | --- |
+| 1 | Infraestructura actual en Raspberry Pi | ✅ Completado |
+| 2 | Migración a Supabase y FastAPI cloud | 📝 Diseñada |
+| 3 | Autenticación y esqueleto Flutter | 🔄 En progreso |
+| 4 | Funcionalidad central (notas, turnos) | 🔄 En progreso |
+| 5 | Sincronización offline | ⏳ Pendiente |
+| 6 | Voz a texto on-device | 🔄 En progreso |
+| 7 | Integración con sistemas hospitalarios | 🔄 En progreso |
+
+Las notas de texto y voz ya tienen implementación en Flutter y FastAPI. El flujo
+de cambios de turno solo está representado en el esquema de base de datos y aún
+no tiene API ni interfaz. La transcripción on-device está implementada con
+Sherpa ONNX, pero queda pendiente validarla en un dispositivo objetivo.
