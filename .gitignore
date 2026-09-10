@@ -144,5 +144,3 @@ integration/test_data/fhir
 backend/cloudflare-tunnel-url.txt
 backend/fhir_sync_state.json
 backend/update_fhir_url.ps1
-# Added by code-review-graph
-.code-review-graph/
