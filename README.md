@@ -38,7 +38,8 @@ carer-record/
 │   │   │   ├── remote/         # Cliente HTTP hacia el backend
 │   │   │   └── services/       # Grabación y transcripción
 │   │   └── presentation/       # Pantallas y widgets
-│   └── pubspec.yaml
+│   ├── pubspec.yaml
+│   └── .fvmrc                    # Flutter 3.44.9 / Dart 3.12.2
 ├── backend/                    # API FastAPI
 │   ├── app/
 │   │   ├── api/v1/routes/      # Rutas: auth, users, patients y notes
@@ -46,7 +47,8 @@ carer-record/
 │   │   ├── fhir/               # Importador y mapeadores FHIR
 │   │   ├── sync/               # Sincronización incremental FHIR
 │   │   └── workers/            # Worker de transcripción
-│   └── requirements.txt
+│   ├── requirements.txt
+│   └── .python-version           # Python 3.11.11
 ├── integration/                # Adaptadores para sistemas hospitalarios
 │   ├── adapters/
 │   │   ├── fhir_adapter.py     # Importación desde FHIR R4
@@ -67,8 +69,8 @@ carer-record/
 
 ### Requisitos previos
 
-- [Flutter SDK](https://docs.flutter.dev/get-started/install) ≥ 3.x
-- Python ≥ 3.11
+- [FVM](https://fvm.app/) para instalar Flutter 3.44.9 (incluye Dart 3.12.2)
+- [uv](https://docs.astral.sh/uv/) para instalar Python 3.11.11
 - MariaDB ≥ 10.x
 - URL de Cloudflare Tunnel del servidor actual
 
@@ -79,18 +81,38 @@ git clone https://github.com/MonarcShadow/carer-record.git
 cd carer-record
 ```
 
-### 2. Configurar el backend
+### 2. Configurar Flutter
+
+```bash
+cd app
+fvm install
+fvm flutter pub get
+```
+
+FVM descarga el SDK declarado en `app/.fvmrc`. Ejecutar los comandos Flutter
+siempre mediante `fvm flutter ...`, por ejemplo `fvm flutter run`.
+
+### 3. Configurar el backend
 
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate          # En Linux/macOS
-# venv\Scripts\activate           # En Windows
-
-pip install -r requirements.txt
+uv venv --python 3.11.11
+uv pip install --python .venv -r requirements.txt
 ```
 
-El archivo `backend/requirements.txt` contiene las dependencias de la API. Los
+Activar el entorno cuando se necesite ejecutar comandos directamente:
+
+```bash
+# Linux, macOS y WSL
+source .venv/bin/activate
+
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+```
+
+El archivo `backend/.python-version` fija el intérprete para el equipo. El
+entorno virtual local (`backend/.venv`) no se versiona. `backend/requirements.txt`
+contiene las dependencias de la API. Los
 componentes opcionales de la infraestructura actual requieren paquetes
 adicionales:
 
@@ -109,7 +131,7 @@ touch .env
 # Configurar DATABASE_URL y las variables del sincronizador FHIR
 ```
 
-### 3. Inicializar la base de datos
+### 4. Inicializar la base de datos
 
 Aplicar el schema en el servidor de desarrollo:
 
@@ -123,7 +145,7 @@ O usar el script de setup completo (en el servidor, sistema Linux):
 bash infra/scripts/setup_integration.sh
 ```
 
-### 4. Ejecutar el backend
+### 5. Ejecutar el backend
 
 ```bash
 cd backend
@@ -132,12 +154,11 @@ uvicorn app.main:app --reload --port 8000
 
 La documentación de la API estará disponible en `http://localhost:8000/docs`.
 
-### 5. Configurar la app Flutter
+### 6. Ejecutar la app Flutter
 
 ```bash
 cd app
-flutter pub get
-flutter run
+fvm flutter run
 ```
 
 ---

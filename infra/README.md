@@ -9,7 +9,7 @@ la URL del túnel para configurar su `.env`.
 ## Requisitos en el servidor (sistema Linux)
 
 - MariaDB ≥ 10.x instalado y en ejecución
-- Python ≥ 3.11
+- Python 3.11.11 (definido en `backend/.python-version`)
 - `cloudflared` instalado (ver sección siguiente)
 - Cuenta en [Cloudflare](https://dash.cloudflare.com) (gratuita)
 

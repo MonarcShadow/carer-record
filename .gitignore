@@ -15,8 +15,8 @@
 build/
 *.dart_tool/
 
-# Archivos generados por flutter pub get
-pubspec.lock     # Comentar esta línea si el equipo quiere fijar versiones exactas
+# Archivos generados por FVM; app/.fvmrc sí se versiona.
+.fvm/
 
 # Cobertura de tests
 coverage/
