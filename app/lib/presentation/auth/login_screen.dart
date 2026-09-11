@@ -1,22 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:local_auth/local_auth.dart';
 import '../../core/theme/theme.dart';
+import '../../core/theme/cr_theme.dart';
 import '../../data/remote/auth_service.dart';
 import '../../data/remote/dto/auth_dto.dart';
 import '../../data/local/auth_preferences.dart';
+import '../widgets/cr_widgets.dart';
 import 'home_screen.dart';
-import '../profiles/doctor_screen.dart';
-import '../profiles/nurse_screen.dart';
-import '../profiles/tech_screen.dart';
-
-Widget _screenForRole(LoginResponseDto user) {
-  switch (user.userRole) {
-    case 'doctor': return DoctorScreen(user: user);
-    case 'nurse':  return NurseScreen(user: user);
-    case 'tech':   return TechScreen(user: user);
-    default:       return HomeScreen(user: user);
-  }
-}
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -26,14 +16,14 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _formKey             = GlobalKey<FormState>();
+  final _formKey = GlobalKey<FormState>();
   final _identifierController = TextEditingController();
-  final _passwordController  = TextEditingController();
-  final _authService         = AuthService();
-  final _localAuth           = LocalAuthentication();
+  final _passwordController = TextEditingController();
+  final _authService = AuthService();
+  final _localAuth = LocalAuthentication();
 
   bool _obscurePassword = true;
-  bool _isLoading       = false;
+  bool _isLoading = false;
   bool _hasSession = false;
 
   @override
@@ -47,6 +37,13 @@ class _LoginScreenState extends State<LoginScreen> {
     _identifierController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  void _goHome(LoginResponseDto user) {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => HomeScreen(user: user)),
+    );
   }
 
   Future<void> _checkSession() async {
@@ -90,19 +87,14 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => _screenForRole(
-            LoginResponseDto(
-              accessToken: session['token']!,
-              tokenType:   'bearer',
-              userId:      session['userId'] ?? '',
-              userName:    session['userName'] ?? '',
-              userRole:    session['userRole'] ?? '',
-              userEmail:   session['userEmail'] ?? '',
-            ),
-          ),
+      _goHome(
+        LoginResponseDto(
+          accessToken: session['token']!,
+          tokenType: 'bearer',
+          userId: session['userId'] ?? '',
+          userName: session['userName'] ?? '',
+          userRole: session['userRole'] ?? '',
+          userEmail: session['userEmail'] ?? '',
         ),
       );
     } catch (_) {}
@@ -119,24 +111,21 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       await AuthPreferences.saveSession(
-        token:     response.accessToken,
-        userId:    response.userId,
-        userName:  response.userName,
-        userRole:  response.userRole,
+        token: response.accessToken,
+        userId: response.userId,
+        userName: response.userName,
+        userRole: response.userRole,
         userEmail: response.userEmail,
       );
 
       if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => _screenForRole(response)),
-      );
+      _goHome(response);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(e.toString().replaceAll('Exception: ', '')),
-          backgroundColor: Colors.red,
+          backgroundColor: CR.red,
         ),
       );
     } finally {
@@ -144,118 +133,208 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  // ── Campo con etiqueta superior (estilo Figma) ───────────────────────────
+  Widget _labeledField({
+    required String label,
+    required TextEditingController controller,
+    required String hint,
+    final String? Function(String?)? validator,
+    bool obscureText = false,
+    Widget? suffixIcon,
+  }) {
+    final t = CRTokens.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 7),
+          child: Text(
+            label,
+            style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.05,
+                color: t.textSecondary),
+          ),
+        ),
+        TextFormField(
+          controller: controller,
+          obscureText: obscureText,
+          validator: validator,
+          style: TextStyle(fontSize: 15, color: t.textPrimary),
+          decoration: InputDecoration(
+            hintText: hint,
+            isDense: true,
+            filled: true,
+            fillColor: t.field,
+            suffixIcon: suffixIcon,
+            contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16, vertical: 15),
+            hintStyle: TextStyle(fontSize: 15, color: t.textTertiary),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none,
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: CR.mintDark, width: 1.5),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: CR.red),
+            ),
+            focusedErrorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: CR.red, width: 1.5),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Obtenemos el esquema de colores dinámico basado en el modo actual
-    final colorScheme = Theme.of(context).colorScheme;
-
+    final t = CRTokens.of(context);
     return Scaffold(
-      // Usamos el color de fondo dinámico en lugar de AppTheme.background fijo
-      backgroundColor: colorScheme.surface,
+      backgroundColor: t.background,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 48),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                const SizedBox(height: 24),
-                Container(
-                  width: 72,
-                  height: 72,
-                  decoration: BoxDecoration(
-                    color: AppTheme.primary, // Mantenemos el verde primario
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: const Center(
-                    child: Text(
-                      'CR',
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Logo
+                    Container(
+                      width: 68,
+                      height: 68,
+                      decoration: BoxDecoration(
+                        color: CR.mint,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          'CR',
+                          style: TextStyle(
+                            color: CR.mintInk,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      'Carer-Record',
                       style: TextStyle(
-                        color: Colors.white, // Blanco fijo sobre fondo primario siempre se ve bien
-                        fontSize: 26,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1,
-                      ),
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.4,
+                          color: t.textPrimary),
                     ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Carer-Record',
-                  style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.bold,
-                    // Usamos color dinámico para el texto principal
-                    color: colorScheme.onSurface,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Acceso institucional asistencial',
-                  style: TextStyle(
-                    fontSize: 14, 
-                    // Usamos un color con menos opacidad para texto secundario en modo dinámico
-                    color: colorScheme.onSurface.withValues(alpha: 0.6)
-                  ),
-                ),
-                const SizedBox(height: 48),
-                TextFormField(
-                  controller: _identifierController,
-                  keyboardType: TextInputType.text,
-                  // El color del texto ingresado debe adaptarse al tema
-                  style: TextStyle(color: colorScheme.onSurface),
-                  decoration: InputDecoration(
-                    labelText: 'RUT o correo institucional',
-                    hintText: '12.345.678-9',
-                    // Asegurar que los hint y label se adapten
-                    labelStyle: TextStyle(color: colorScheme.onSurface.withValues(alpha: 0.7)),
-                    hintStyle: TextStyle(color: colorScheme.onSurface.withValues(alpha: 0.4)),
-                  ),
-                  validator: (v) =>
-                      v == null || v.isEmpty ? 'Ingresa tu RUT o correo' : null,
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _passwordController,
-                  obscureText: _obscurePassword,
-                  style: TextStyle(color: colorScheme.onSurface),
-                  decoration: InputDecoration(
-                    labelText: 'Contraseña',
-                    labelStyle: TextStyle(color: colorScheme.onSurface.withValues(alpha: 0.7)),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscurePassword
-                            ? Icons.visibility_off
-                            : Icons.visibility,
-                        color: colorScheme.onSurface.withValues(alpha: 0.6),
-                      ),
-                      onPressed: () =>
-                          setState(() => _obscurePassword = !_obscurePassword),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Sistema de trazabilidad clínica',
+                      style:
+                          TextStyle(fontSize: 13, color: t.textSecondary),
                     ),
-                  ),
-                  validator: (v) =>
-                      v == null || v.isEmpty ? 'Ingresa tu contraseña' : null,
-                ),
-                const SizedBox(height: 28),
-                _isLoading
-                    ? const CircularProgressIndicator(color: AppTheme.primary)
-                    : ElevatedButton(
-                        onPressed: _handleLogin,
-                        child: const Text('Ingresar al sistema'),
-                      ),
-                const SizedBox(height: 24),
-                if (_hasSession)
-                  TextButton.icon(
-                    onPressed: _tryBiometricLogin,
-                    icon: Icon(Icons.fingerprint,
-                        color: colorScheme.onSurface.withValues(alpha: 0.6)),
-                    label: Text(
-                      'Acceso biométrico disponible',
-                      style: TextStyle(color: colorScheme.onSurface.withValues(alpha: 0.6)),
+                    const SizedBox(height: 28),
+                    Divider(height: 1, color: t.separator),
+                    const SizedBox(height: 28),
+                    // Título
+                    Text(
+                      'Iniciar sesión',
+                      style: TextStyle(
+                          fontSize: 27,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -0.5,
+                          color: t.textPrimary),
                     ),
-                  ),
-              ],
+                    const SizedBox(height: 3),
+                    Text(
+                      'Accede con tus credenciales institucionales',
+                      style:
+                          TextStyle(fontSize: 14, color: t.textSecondary),
+                    ),
+                    const SizedBox(height: 26),
+                    // Campos
+                    _labeledField(
+                      label: 'RUT o correo institucional',
+                      controller: _identifierController,
+                      hint: '12.345.678-9',
+                      validator: (v) =>
+                          v == null || v.isEmpty ? 'Ingresa tu RUT o correo' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    _labeledField(
+                      label: 'Contraseña',
+                      controller: _passwordController,
+                      hint: '••••••••',
+                      obscureText: _obscurePassword,
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                          color: t.textTertiary,
+                        ),
+                        onPressed: () =>
+                            setState(() => _obscurePassword = !_obscurePassword),
+                      ),
+                      validator: (v) =>
+                          v == null || v.isEmpty ? 'Ingresa tu contraseña' : null,
+                    ),
+                    const SizedBox(height: 22),
+                    // CTA
+                    _isLoading
+                        ? const SizedBox(
+                            height: 32,
+                            child: CircularProgressIndicator(color: CR.mintDark),
+                          )
+                        : CRPrimaryButton(
+                            label: 'Iniciar sesión',
+                            onPressed: _handleLogin,
+                          ),
+                    const SizedBox(height: 18),
+                    // Opción biométrica
+                    if (_hasSession)
+                      InkWell(
+                        onTap: _tryBiometricLogin,
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.fingerprint, size: 22, color: CR.blue),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'Acceder con huella',
+                                style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w500,
+                                    color: CR.blue),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 28),
+                    Text(
+                      'Uso exclusivo personal clínico autorizado',
+                      style: TextStyle(fontSize: 12, color: t.textTertiary),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),

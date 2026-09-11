@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:local_auth/local_auth.dart';
-import '../../core/theme/theme.dart';
+import '../../core/theme/cr_theme.dart';
 import '../../data/local/auth_preferences.dart';
 import '../../data/remote/dto/auth_dto.dart';
 import '../auth/login_screen.dart';
@@ -84,7 +84,9 @@ class _AppDrawerState extends State<AppDrawer> {
 
   @override
   Widget build(BuildContext context) {
+    final t = CRTokens.of(context);
     return Drawer(
+      backgroundColor: t.background,
       child: SafeArea(
         child: Column(
           children: [
@@ -92,7 +94,13 @@ class _AppDrawerState extends State<AppDrawer> {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-              color: AppTheme.primary,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [CR.mintDark, CR.mint],
+                ),
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -132,25 +140,43 @@ class _AppDrawerState extends State<AppDrawer> {
 
             // Huella dactilar
             ListTile(
-              leading: const Icon(Icons.fingerprint, color: AppTheme.primary),
-              title: const Text('Inicio con huella'),
+              leading: Icon(
+                Icons.fingerprint,
+                color: t.isDark ? CR.mint : CR.mintDark,
+              ),
+              title: Text(
+                'Inicio con huella',
+                style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w500),
+              ),
               subtitle: Text(
                 _hasBiometrics
                     ? 'Tu dispositivo es compatible'
                     : 'Tu dispositivo no tiene lector',
-                style: const TextStyle(fontSize: 12),
+                style: TextStyle(fontSize: 12, color: t.textSecondary),
               ),
               trailing: Switch(
                 value: _biometricEnabled,
-                activeThumbColor: AppTheme.primary,
+                activeThumbColor: CR.mint,
+                activeTrackColor: CR.mintDark.withValues(alpha: 0.35),
                 onChanged: _hasBiometrics ? _toggleBiometric : null,
               ),
             ),
-            const Divider(indent: 16, endIndent: 16),
+            Divider(
+              height: 1,
+              indent: 16,
+              endIndent: 16,
+              color: t.separator,
+            ),
 
             ListTile(
-              leading: const Icon(Icons.psychology, color: AppTheme.primary),
-              title: const Text('Configuración de IA'),
+              leading: Icon(
+                Icons.psychology,
+                color: t.isDark ? CR.mint : CR.mintDark,
+              ),
+              title: Text(
+                'Configuración de IA',
+                style: TextStyle(color: t.textPrimary, fontWeight: FontWeight.w500),
+              ),
               onTap: () {
                 Navigator.pop(context); // cierra el drawer
                 Navigator.push(
@@ -160,32 +186,47 @@ class _AppDrawerState extends State<AppDrawer> {
               },
             ),
 
-            const Divider(indent: 16, endIndent: 16),
+            Divider(
+              height: 1,
+              indent: 16,
+              endIndent: 16,
+              color: t.separator,
+            ),
 
             // Modo oscuro
             Consumer<ThemeProvider>(
               builder: (context, themeProvider, _) => ListTile(
                 leading: Icon(
                   themeProvider.isDark ? Icons.light_mode : Icons.dark_mode,
-                  color: AppTheme.primary,
+                  color: t.isDark ? CR.mint : CR.mintDark,
                 ),
-                title: const Text('Modo oscuro'),
+                title: Text(
+                  'Modo oscuro',
+                  style: TextStyle(
+                      color: t.textPrimary, fontWeight: FontWeight.w500),
+                ),
                 trailing: Switch(
                   value: themeProvider.isDark,
-                  activeThumbColor: AppTheme.primary,
+                  activeThumbColor: CR.mint,
+                  activeTrackColor: CR.mintDark.withValues(alpha: 0.35),
                   onChanged: (_) => themeProvider.toggle(),
                 ),
               ),
             ),
 
             const Spacer(),
-            const Divider(indent: 16, endIndent: 16),
+            Divider(
+              height: 1,
+              indent: 16,
+              endIndent: 16,
+              color: t.separator,
+            ),
 
             // Cerrar sesión
             ListTile(
-              leading: const Icon(Icons.logout, color: Colors.red),
+              leading: const Icon(Icons.logout, color: CR.red),
               title: const Text('Cerrar sesión',
-                  style: TextStyle(color: Colors.red)),
+                  style: TextStyle(color: CR.red, fontWeight: FontWeight.w500)),
               onTap: _logout,
             ),
             const SizedBox(height: 8),

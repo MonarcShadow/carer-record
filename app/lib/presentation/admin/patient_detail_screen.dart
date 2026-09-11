@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import '../../core/theme/theme.dart';
+import '../../core/theme/cr_theme.dart';
 import '../../data/remote/dto/auth_dto.dart';
 import '../../data/remote/patients_service.dart';
+import '../widgets/cr_widgets.dart';
 import 'notes_screen.dart';
 
 // ── Configuración de cada sección ─────────────────────────────────────────────
@@ -233,10 +234,10 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
   bool    _loading = true;
   String? _error;
 
-  // Secciones expandidas — hospitalizacion y personal abiertas por defecto
+  // Secciones expandidas (claves fijas + dinámicas, cerradas por defecto)
   final Map<String, bool> _expanded = {
-    'hospitalizacion': true,
-    'personal':        false,
+    'personal': false,
+    'adicional': false,
   };
 
   @override
@@ -246,16 +247,24 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
   }
 
   Future<void> _load() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
       final p = await _service.getPatientById(widget.patientId);
-      // Inicializar estado colapsado para secciones dinámicas
       for (final key in p.sections.keys) {
         _expanded.putIfAbsent(key, () => false);
       }
-      setState(() { _patient = p; _loading = false; });
+      setState(() {
+        _patient = p;
+        _loading = false;
+      });
     } catch (e) {
-      setState(() { _error = e.toString(); _loading = false; });
+      setState(() {
+        _error = e.toString().replaceAll('Exception: ', '');
+        _loading = false;
+      });
     }
   }
 
@@ -264,16 +273,18 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     if (raw == null || raw.toString().isEmpty) return '—';
     try {
       final dt = DateTime.parse(raw.toString());
-      final d = '${dt.day.toString().padLeft(2,'0')}/'
-                '${dt.month.toString().padLeft(2,'0')}/'
-                '${dt.year}';
+      final d = '${dt.day.toString().padLeft(2, '0')}/'
+          '${dt.month.toString().padLeft(2, '0')}/'
+          '${dt.year}';
       final s = raw.toString();
       if (s.contains('T') || s.contains(' ')) {
-        return '$d  ${dt.hour.toString().padLeft(2,'0')}:'
-               '${dt.minute.toString().padLeft(2,'0')}';
+        return '$d  ${dt.hour.toString().padLeft(2, '0')}:'
+            '${dt.minute.toString().padLeft(2, '0')}';
       }
       return d;
-    } catch (_) { return raw.toString(); }
+    } catch (_) {
+      return raw.toString();
+    }
   }
 
   String _val(dynamic v) {
@@ -282,27 +293,27 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
   }
 
   String _genderLabel(String g) => switch (g.toLowerCase()) {
-    'male'   => 'Masculino',
-    'female' => 'Femenino',
-    'other'  => 'Otro',
-    _        => 'Desconocido',
-  };
+        'male' => 'Masculino',
+        'female' => 'Femenino',
+        'other' => 'Otro',
+        _ => 'Desconocido',
+      };
 
   String _maritalLabel(String m) => switch (m.toLowerCase()) {
-    'married'  => 'Casado/a',
-    'single'   => 'Soltero/a',
-    'divorced' => 'Divorciado/a',
-    'widowed'  => 'Viudo/a',
-    _          => m.isEmpty ? '—' : m,
-  };
+        'married' => 'Casado/a',
+        'single' => 'Soltero/a',
+        'divorced' => 'Divorciado/a',
+        'widowed' => 'Viudo/a',
+        _ => m.isEmpty ? '—' : m,
+      };
 
   String _sourceLabel(String s) => switch (s) {
-    'fhir'   => 'FHIR R4',
-    'hl7v2'  => 'HL7 v2',
-    'csv'    => 'CSV',
-    'manual' => 'Manual',
-    _        => s,
-  };
+        'fhir' => 'FHIR R4',
+        'hl7v2' => 'HL7 v2',
+        'csv' => 'CSV',
+        'manual' => 'Manual',
+        _ => s,
+      };
 
   String _initials(PatientDetailModel p) {
     final f = p.firstName.trim();
@@ -311,172 +322,476 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     return f.isNotEmpty ? f[0].toUpperCase() : '?';
   }
 
+  int? _ageOf(String birthDate) {
+    final dt = DateTime.tryParse(birthDate);
+    if (dt == null) return null;
+    final now = DateTime.now();
+    var age = now.year - dt.year;
+    if (now.month < dt.month ||
+        (now.month == dt.month && now.day < dt.day)) {
+      age--;
+    }
+    return age;
+  }
+
+  String? _dayLabel(String admissionDate) {
+    final dt = DateTime.tryParse(admissionDate);
+    if (dt == null) return null;
+    final now = DateTime.now();
+    final a = DateTime(dt.year, dt.month, dt.day);
+    final n = DateTime(now.year, now.month, now.day);
+    final days = n.difference(a).inDays + 1;
+    return days >= 1 ? 'Día $days' : null;
+  }
+
   Color _severityColor(String s) => switch (s.toLowerCase()) {
-    'severe' || 'high'       => Colors.red,
-    'moderate' || 'medium'   => Colors.orange,
-    'mild' || 'low'          => Colors.amber,
-    _                        => Colors.grey,
-  };
+        'severe' || 'high' => Colors.red,
+        'moderate' || 'medium' => Colors.orange,
+        'mild' || 'low' => Colors.amber,
+        _ => Colors.grey,
+      };
 
   // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final theme  = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
+    final t = CRTokens.of(context);
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_patient?.fullName ?? widget.patientName),
-        actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _load),
-        ],
-      ),
-      floatingActionButton: _patient == null ? null
-          : FloatingActionButton.extended(
-              onPressed: () => Navigator.push(context, MaterialPageRoute(
-                builder: (_) => NotesScreen(
-                  patientId:   widget.patientId,
-                  patientName: _patient!.fullName,
-                  currentUser: widget.currentUser,
-                ),
-              )),
-              backgroundColor: AppTheme.primary,
-              foregroundColor: Colors.white,
-              icon: const Icon(Icons.note_alt),
-              label: const Text('Notas'),
+      backgroundColor: t.background,
+      body: SafeArea(
+        child: Column(
+          children: [
+            CRNavBar(
+              onBack: () => Navigator.pop(context),
+              title: _patient?.fullName ?? widget.patientName,
+              right: IconButton(
+                icon: Icon(Icons.refresh, size: 20, color: t.textSecondary),
+                onPressed: _load,
+              ),
             ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? _buildError(theme)
-              : _buildContent(_patient!, theme, isDark),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _error != null
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.error_outline, color: CR.red, size: 44),
+                              const SizedBox(height: 10),
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 40),
+                                child: Text(
+                                  _error!,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(fontSize: 14, color: CR.red),
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              CRPrimaryButton(
+                                label: 'Reintentar',
+                                height: 48,
+                                onPressed: _load,
+                              ),
+                            ],
+                          ),
+                        )
+                      : _buildContent(_patient!),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
-  Widget _buildContent(PatientDetailModel p, ThemeData theme, bool isDark) {
+  Widget _buildContent(PatientDetailModel p) {
+    final t = CRTokens.of(context);
+    final age = _ageOf(p.birthDate);
+    final day = _dayLabel(p.admissionDate);
+
+    final metaParts = [
+      if (age != null) '$age años',
+      if (day != null) day,
+    ];
+    final meta = metaParts.join(' · ');
+
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 100),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildHeader(p, theme),
-          const SizedBox(height: 20),
-
-          // ── Hospitalización (fija) ────────────────────────────────────
-          _CollapsibleSection(
-            isDark: isDark,
-            icon: Icons.local_hospital,
-            title: 'Hospitalización',
-            isExpanded: _expanded['hospitalizacion']!,
-            onToggle: () => setState(() =>
-                _expanded['hospitalizacion'] = !_expanded['hospitalizacion']!),
-            child: Column(children: [
-              _row(theme, 'Zona',          _val(p.ward)),
-              _row(theme, 'Cama',          _val(p.bedNumber)),
-              _row(theme, 'Ingreso',       _fmt(p.admissionDate)),
-              _row(theme, 'Alta esperada', _fmt(p.expectedDischargeDate)),
-              _rowMulti(theme, 'Diagnóstico principal',
-                  _val(p.primaryDiagnosis)),
-            ]),
-          ),
-          const SizedBox(height: 12),
-
-          // ── Datos personales (fija) ───────────────────────────────────
-          _CollapsibleSection(
-            isDark: isDark,
-            icon: Icons.person,
-            title: 'Datos personales',
-            isExpanded: _expanded['personal']!,
-            onToggle: () => setState(() =>
-                _expanded['personal'] = !_expanded['personal']!),
-            child: Column(children: [
-              _row(theme, 'Nombre',       p.fullName),
-              _row(theme, 'Nacimiento',   _fmt(p.birthDate)),
-              _row(theme, 'Género',       _genderLabel(p.gender)),
-              _row(theme, 'Estado civil', _maritalLabel(p.maritalStatus)),
-              _row(theme, 'Teléfono',     _val(p.phone)),
-              _row(theme, 'Idioma',       _val(p.language)),
-              _row(theme, 'Etnia',        _val(p.ethnicity)),
-              _rowMulti(theme, 'Dirección', _val(p.address)),
-            ]),
-          ),
-          const SizedBox(height: 12),
-
-          // ── Secciones dinámicas ───────────────────────────────────────
-          ...p.sections.entries.map((entry) {
-            final key     = entry.key;
-            final items   = entry.value;
-            final config  = _sectionConfigs[key];
-            final icon    = config?.icon  ?? Icons.list_alt;
-            final title   = config?.title ?? key;
-
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _CollapsibleSection(
-                isDark: isDark,
-                icon: icon,
-                title: title,
-                badge: items.length,
-                isExpanded: _expanded[key] ?? false,
-                onToggle: () => setState(() =>
-                    _expanded[key] = !(_expanded[key] ?? false)),
-                child: items.isEmpty
-                    ? _empty(theme, 'Sin registros')
-                    : Column(
-                        children: items.map((item) =>
-                            _buildDynamicCard(item, config, theme, isDark)
-                        ).toList(),
+          // ── Tarjeta resumen ────────────────────────────────────────────
+          Container(
+            decoration: BoxDecoration(
+              color: t.surface,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: t.cardShadow,
+            ),
+            child: Column(
+              children: [
+                // encabezado
+                Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Row(
+                    children: [
+                      CRCircleAvatar(
+                        initials: _initials(p),
+                        size: 54,
+                        bg: CR.mintSoft,
+                        fg: t.isDark ? CR.mint : CR.mintInk,
+                        fontSize: 17,
                       ),
-              ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                p.fullName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    fontSize: 19,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: -0.3,
+                                    color: t.textPrimary),
+                              ),
+                            ),
+                            if (meta.isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text(meta,
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      color: t.textSecondary)),
+                            ],
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: CR.mintSoft,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Text(
+                          'Activo',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: CR.mintDark),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Divider(height: 1, color: t.separator),
+                // filas de info
+                Padding(
+                  padding:
+                      const EdgeInsets.only(left: 18, right: 18, bottom: 10),
+                  child: Column(
+                    children: [
+                      if (p.ward.isNotEmpty || p.bedNumber.isNotEmpty)
+                        CRInfoRow(
+                          icon: Icons.medical_services_rounded,
+                          label: 'Habitación',
+                          value: [
+                            if (p.ward.isNotEmpty) p.ward,
+                            if (p.bedNumber.isNotEmpty) 'Cama ${p.bedNumber}',
+                          ].join(' · '),
+                        ),
+                      CRInfoRow(
+                        icon: Icons.event_rounded,
+                        label: 'Ingreso',
+                        value: _fmt(p.admissionDate),
+                      ),
+                      if (p.expectedDischargeDate.isNotEmpty)
+                        CRInfoRow(
+                          icon: Icons.holiday_village_rounded,
+                          label: 'Alta esperada',
+                          value: _fmt(p.expectedDischargeDate),
+                        ),
+                    ],
+                  ),
+                ),
+                if (p.primaryDiagnosis.isNotEmpty) ...[
+                  Divider(height: 1, color: t.separator),
+                  CRDetailRow(
+                    label: 'Motivo de hospitalización',
+                    value: p.primaryDiagnosis,
+                  ),
+                ],
+                Divider(height: 1, color: t.separator),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 12, 18, 14),
+                  child: Row(
+                    children: [
+                      Text('Estado',
+                          style:
+                              TextStyle(fontSize: 14, color: t.textSecondary)),
+                      const Spacer(),
+                      Container(
+                          width: 7,
+                          height: 7,
+                          decoration: const BoxDecoration(
+                              color: CR.mintDark, shape: BoxShape.circle)),
+                      const SizedBox(width: 8),
+                      Text('Hospitalización activa',
+                          style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: t.textPrimary)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // ── Acciones rápidas ───────────────────────────────────────────
+          const SizedBox(height: 22),
+          const CRSectionLabel(text: 'Acciones rápidas'),
+          const SizedBox(height: 10),
+          Container(
+            decoration: BoxDecoration(
+              color: t.surface,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: t.cardShadow,
+            ),
+            child: Column(
+              children: [
+                CRActionRow(
+                  icon: Icons.timeline_rounded,
+                  label: 'Bitácora',
+                  subtitle: 'Historial de eventos del turno',
+                  onTap: () => _openNotes(autoOpen: false),
+                ),
+                Divider(height: 1, color: t.separator, indent: 68, endIndent: 0),
+                CRActionRow(
+                  icon: Icons.add_circle_outline_rounded,
+                  label: 'Registrar evento',
+                  subtitle: 'Nuevo audio o texto',
+                  highlight: true,
+                  onTap: () => _openNotes(autoOpen: true),
+                ),
+                Divider(height: 1, color: t.separator, indent: 68, endIndent: 0),
+                const CRActionRow(
+                  icon: Icons.description_outlined,
+                  label: 'Borrador de evolución',
+                  subtitle: 'Resumen del turno actual',
+                  comingSoon: true,
+                ),
+              ],
+            ),
+          ),
+
+          // ── Información clínica ────────────────────────────────────────
+          const SizedBox(height: 22),
+          const CRSectionLabel(text: 'Información clínica'),
+          const SizedBox(height: 10),
+          _buildCollapsible(
+            icon: Icons.person_outline_rounded,
+            title: 'Datos personales',
+            sectionKey: 'personal',
+            child: Column(
+              children: [
+                _row('Nombre', p.fullName),
+                _row('Nacimiento', _fmt(p.birthDate)),
+                _row('Género', _genderLabel(p.gender)),
+                _row('Estado civil', _maritalLabel(p.maritalStatus)),
+                if (p.phone.isNotEmpty) _row('Teléfono', _val(p.phone)),
+                if (p.language.isNotEmpty) _row('Idioma', _val(p.language)),
+                if (p.ethnicity.isNotEmpty) _row('Etnia', _val(p.ethnicity)),
+                if (p.address.isNotEmpty) _rowMulti('Dirección', _val(p.address)),
+              ],
+            ),
+          ),
+
+          // Secciones dinámicas
+          ...p.sections.entries.map((entry) {
+            final key = entry.key;
+            final items = entry.value;
+            final config = _sectionConfigs[key];
+            final icon = config?.icon ?? Icons.list_alt;
+            final title = config?.title ?? key;
+
+            return _buildCollapsible(
+              icon: icon,
+              title: title,
+              badge: items.length,
+              sectionKey: key,
+              child: items.isEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text('Sin registros',
+                          style: TextStyle(
+                              fontSize: 13, color: t.textTertiary)),
+                    )
+                  : Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 6, 10, 10),
+                      child: Column(
+                        children: items
+                            .map((item) => _buildDynamicCard(item, config))
+                            .toList(),
+                      ),
+                    ),
             );
           }),
 
-          // ── Información adicional (fija) ──────────────────────────────
-          _CollapsibleSection(
-            isDark: isDark,
-            icon: Icons.info_outline,
+          // Información adicional
+          _buildCollapsible(
+            icon: Icons.info_outline_rounded,
             title: 'Información adicional',
-            isExpanded: _expanded['adicional'] ?? false,
-            onToggle: () => setState(() =>
-                _expanded['adicional'] = !(_expanded['adicional'] ?? false)),
-            child: Column(children: [
-              _row(theme, 'Origen datos', _sourceLabel(p.sourceSystem)),
-              _row(theme, 'Registrado',   _fmt(p.createdAt)),
-            ]),
+            sectionKey: 'adicional',
+            child: Column(
+              children: [
+                _row('Origen datos', _sourceLabel(p.sourceSystem)),
+                _row('Registrado', _fmt(p.createdAt)),
+              ],
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _openNotes({required bool autoOpen}) {
+    final p = _patient!;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NotesScreen(
+          patientId: widget.patientId,
+          patientName: p.fullName,
+          currentUser: widget.currentUser,
+          ward: p.ward,
+          bedNumber: p.bedNumber,
+          admissionDate: p.admissionDate,
+          primaryDiagnosis: p.primaryDiagnosis,
+          autoOpenRegister: autoOpen,
+        ),
+      ),
+    );
+  }
+
+  // ── Sección colapsable ─────────────────────────────────────────────────────
+  Widget _buildCollapsible({
+    required IconData icon,
+    required String title,
+    int? badge,
+    required String sectionKey,
+    required Widget child,
+  }) {
+    final t = CRTokens.of(context);
+    final isExpanded = _expanded[sectionKey] ?? false;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Container(
+        decoration: BoxDecoration(
+          color: t.surface,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: t.cardShadow,
+        ),
+        child: Column(
+          children: [
+            InkWell(
+              onTap: () =>
+                  setState(() => _expanded[sectionKey] = !isExpanded),
+              borderRadius: BorderRadius.circular(16),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        color: CR.mintSoft,
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: Icon(icon, size: 16, color: CR.mintDark),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(title,
+                          style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: t.textPrimary)),
+                    ),
+                    if (badge != null && badge! > 0)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        margin: const EdgeInsets.only(right: 8),
+                        decoration: BoxDecoration(
+                          color: t.chipBg,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '$badge',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: t.textSecondary),
+                        ),
+                      ),
+                    AnimatedRotation(
+                      turns: isExpanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 200),
+                      child: Icon(Icons.keyboard_arrow_down,
+                          size: 22, color: t.textTertiary),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            AnimatedCrossFade(
+              firstChild: const SizedBox.shrink(),
+              secondChild: Column(
+                children: [
+                  Divider(height: 1, color: t.separator),
+                  child,
+                  const SizedBox(height: 8),
+                ],
+              ),
+              crossFadeState: isExpanded
+                  ? CrossFadeState.showSecond
+                  : CrossFadeState.showFirst,
+              duration: const Duration(milliseconds: 250),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   // ── Sub-tarjeta dinámica ───────────────────────────────────────────────────
-  Widget _buildDynamicCard(
-    Map<String, dynamic> item,
-    _SectionConfig? config,
-    ThemeData theme,
-    bool isDark,
-  ) {
-    // Determinar título de la tarjeta
+  Widget _buildDynamicCard(Map<String, dynamic> item, _SectionConfig? config) {
+    final t = CRTokens.of(context);
+
     String cardTitle = '—';
     if (config?.cardTitle != null) {
       cardTitle = _val(item[config!.cardTitle]);
     }
 
-    // Color de severidad
     Color? severityColor;
     if (config?.severityField != null) {
       final sv = item[config!.severityField]?.toString() ?? '';
       if (sv.isNotEmpty) severityColor = _severityColor(sv);
     }
 
-    // Filas a mostrar
-    List<Widget> rows = [];
+    final rows = <Widget>[];
 
     if (config != null) {
       for (final entry in config.fields.entries) {
         final field = entry.key;
         final label = entry.value;
-        if (label == null) continue;     // título ya usado arriba
+        if (label == null) continue; // título ya usado arriba
         if (field == config.cardTitle) continue;
 
         final raw = item[field];
@@ -488,53 +803,50 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
           final u = _val(item['unit']);
           final combined = u == '—' ? v : '$v $u';
           rows.add(config.multiline.contains(field)
-              ? _rowMulti(theme, label, combined)
-              : _row(theme, label, combined));
+              ? _rowMulti(label, combined)
+              : _row(label, combined));
           continue;
         }
-        if (field == 'unit') continue;   // ya combinado
+        if (field == 'unit') continue; // ya combinado
 
-        // Detectar si es fecha
-        final display = _looksLikeDate(raw.toString())
-            ? _fmt(raw) : _val(raw);
-
+        final display = _looksLikeDate(raw.toString()) ? _fmt(raw) : _val(raw);
         rows.add(config.multiline.contains(field)
-            ? _rowMulti(theme, label, display)
-            : _row(theme, label, display));
+            ? _rowMulti(label, display)
+            : _row(label, display));
       }
     } else {
       // Sin config: mostrar todos los campos que no sean id/external
       for (final entry in item.entries) {
-        if (['id','external_id','source_system'].contains(entry.key)) continue;
+        if (['id', 'external_id', 'source_system'].contains(entry.key)) {
+          continue;
+        }
         final raw = entry.value;
         if (raw == null || raw.toString().isEmpty) continue;
         final label = entry.key.replaceAll('_', ' ');
         final display = _looksLikeDate(raw.toString()) ? _fmt(raw) : _val(raw);
-        rows.add(_row(theme, label, display));
+        rows.add(_row(label, display));
       }
     }
 
     return Container(
-      margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 6),
       decoration: BoxDecoration(
-        color: isDark
-            ? Colors.white.withValues(alpha: 0.04)
-            : AppTheme.primary.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(10),
+        color: t.field,
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: severityColor?.withValues(alpha: 0.4) ??
-              AppTheme.primary.withValues(alpha: 0.15),
+          color: severityColor?.withValues(alpha: 0.4) ?? t.separator,
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
-            child: Row(children: [
+          Row(
+            children: [
               if (severityColor != null) ...[
                 Container(
-                  width: 8, height: 8,
+                  width: 8,
+                  height: 8,
                   decoration: BoxDecoration(
                       color: severityColor, shape: BoxShape.circle),
                 ),
@@ -542,13 +854,15 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
               ],
               Expanded(
                 child: Text(cardTitle,
-                    style: theme.textTheme.bodyMedium
-                        ?.copyWith(fontWeight: FontWeight.bold)),
+                    style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: t.textPrimary)),
               ),
-            ]),
+            ],
           ),
           if (rows.isNotEmpty) ...[
-            const Divider(height: 1),
+            Divider(height: 14, color: t.separator),
             ...rows,
           ],
         ],
@@ -560,214 +874,48 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     return RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(s);
   }
 
-  // ── Header ─────────────────────────────────────────────────────────────────
-  Widget _buildHeader(PatientDetailModel p, ThemeData theme) => Column(
-    children: [
-      CircleAvatar(
-        radius: 44,
-        backgroundColor: AppTheme.primary.withValues(alpha: 0.15),
-        child: Text(_initials(p),
-            style: const TextStyle(color: AppTheme.primary,
-                fontSize: 34, fontWeight: FontWeight.bold)),
-      ),
-      const SizedBox(height: 12),
-      Text(p.fullName,
-          style: theme.textTheme.titleLarge
-              ?.copyWith(fontWeight: FontWeight.bold),
-          textAlign: TextAlign.center),
-      const SizedBox(height: 6),
-      if (p.ward.isNotEmpty)
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-          decoration: BoxDecoration(
-            color: AppTheme.primary.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Text(p.ward,
-              style: const TextStyle(color: AppTheme.primary,
-                  fontWeight: FontWeight.w600, fontSize: 13)),
-        ),
-    ],
-  );
-
   // ── Helpers de fila ────────────────────────────────────────────────────────
-  Widget _row(ThemeData theme, String label, String value) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 130,
-          child: Text(label,
-              style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.textTheme.bodySmall?.color
-                      ?.withValues(alpha: 0.6),
-                  fontWeight: FontWeight.w500)),
-        ),
-        Expanded(
-          child: Text(value,
-              style: theme.textTheme.bodyMedium
-                  ?.copyWith(fontWeight: FontWeight.w500)),
-        ),
-      ],
-    ),
-  );
-
-  Widget _rowMulti(ThemeData theme, String label, String value) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label,
-            style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.textTheme.bodySmall?.color
-                    ?.withValues(alpha: 0.6),
-                fontWeight: FontWeight.w500)),
-        const SizedBox(height: 4),
-        Text(value, style: theme.textTheme.bodyMedium),
-      ],
-    ),
-  );
-
-  Widget _empty(ThemeData theme, String msg) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-    child: Text(msg,
-        style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.textTheme.bodySmall?.color
-                ?.withValues(alpha: 0.5))),
-  );
-
-  Widget _buildError(ThemeData theme) => Center(
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.error_outline,
-            color: theme.colorScheme.error, size: 48),
-        const SizedBox(height: 12),
-        Text(_error!,
-            textAlign: TextAlign.center,
-            style: TextStyle(color: theme.colorScheme.error)),
-        const SizedBox(height: 16),
-        ElevatedButton.icon(
-          onPressed: _load,
-          icon: const Icon(Icons.refresh),
-          label: const Text('Reintentar'),
-        ),
-      ],
-    ),
-  );
-}
-
-// ── Sección colapsable reutilizable ───────────────────────────────────────────
-class _CollapsibleSection extends StatelessWidget {
-  final IconData     icon;
-  final String       title;
-  final int?         badge;
-  final bool         isDark;
-  final bool         isExpanded;
-  final VoidCallback onToggle;
-  final Widget       child;
-
-  const _CollapsibleSection({
-    required this.icon,
-    required this.title,
-    this.badge,
-    required this.isDark,
-    required this.isExpanded,
-    required this.onToggle,
-    required this.child,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(16),
-        border: isDark
-            ? Border.all(color: Colors.white.withValues(alpha: 0.08))
-            : null,
-        boxShadow: [
-          BoxShadow(
-            color: isDark
-                ? Colors.black.withValues(alpha: 0.6)
-                : Colors.black.withValues(alpha: 0.07),
-            blurRadius: isDark ? 0 : 8,
-            offset: const Offset(0, 2),
+  Widget _row(String label, String value) {
+    final t = CRTokens.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(label,
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: t.textSecondary)),
           ),
-          if (isDark)
-            BoxShadow(
-              color: Colors.white.withValues(alpha: 0.06),
-              blurRadius: 12, spreadRadius: 1,
-              offset: const Offset(0, -1),
-            ),
+          Expanded(
+            child: Text(value,
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: t.textPrimary)),
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _rowMulti(String label, String value) {
+    final t = CRTokens.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          InkWell(
-            onTap: onToggle,
-            borderRadius: isExpanded
-                ? const BorderRadius.vertical(top: Radius.circular(16))
-                : BorderRadius.circular(16),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppTheme.primary.withValues(alpha: 0.12),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(icon, color: AppTheme.primary, size: 18),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(title,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: AppTheme.primary)),
-                  ),
-                  if (badge != null && badge! > 0)
-                    Container(
-                      margin: const EdgeInsets.only(right: 8),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: AppTheme.primary.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text('$badge',
-                          style: const TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.primary,
-                              fontWeight: FontWeight.bold)),
-                    ),
-                  AnimatedRotation(
-                    turns: isExpanded ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 200),
-                    child: Icon(Icons.keyboard_arrow_down,
-                        color: AppTheme.primary.withValues(alpha: 0.7)),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          AnimatedCrossFade(
-            firstChild: const SizedBox.shrink(),
-            secondChild: Column(children: [
-              const Divider(height: 1),
-              const SizedBox(height: 4),
-              child,
-              const SizedBox(height: 8),
-            ]),
-            crossFadeState: isExpanded
-                ? CrossFadeState.showSecond
-                : CrossFadeState.showFirst,
-            duration: const Duration(milliseconds: 250),
-          ),
+          Text(label,
+              style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: t.textSecondary)),
+          const SizedBox(height: 3),
+          Text(value, style: TextStyle(fontSize: 14, color: t.textPrimary)),
         ],
       ),
     );
