@@ -88,6 +88,7 @@ class _NotesScreenState extends State<NotesScreen> {
 
   // ── Audio player (revisar grabaciones) ────────────────────────────────────
   final Map<String, AudioPlayer> _players = {};
+  final Map<String, StreamSubscription<void>> _audioSubs = {};
   final Map<String, bool> _playing = {};
   final Set<String> _played = {};
 
@@ -98,7 +99,9 @@ class _NotesScreenState extends State<NotesScreen> {
     _loadNotes();
     _startPollingIfNeeded();
     if (widget.autoOpenRegister) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _openSheet());
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _openSheet();
+      });
     }
   }
 
@@ -110,9 +113,13 @@ class _NotesScreenState extends State<NotesScreen> {
     _timeTimer?.cancel();
     _waveformTimer?.cancel();
     _pollTimer?.cancel();
+    for (final sub in _audioSubs.values) {
+      sub.cancel();
+    }
     for (final p in _players.values) {
       p.dispose();
     }
+    _whisperService.cancelRecording().catchError((_) => null);
     super.dispose();
   }
 
@@ -167,6 +174,7 @@ class _NotesScreenState extends State<NotesScreen> {
     });
     try {
       final notes = await _service.getNotes(widget.patientId);
+      if (!mounted) return;
       setState(() {
         _notes = notes;
         _loading = false;
@@ -229,21 +237,25 @@ class _NotesScreenState extends State<NotesScreen> {
       useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _buildSheet(),
-    );
+    ).whenComplete(() {
+      if (mounted) _resetSheet();
+    });
   }
 
   Future<void> _closeSheet() async {
     if (_isRecording) {
       _waveformTimer?.cancel();
       _timeTimer?.cancel();
-      await _whisperService.stopAndGetFile();
+      try {
+        await _whisperService.stopAndGetFile();
+      } catch (_) {}
+      if (!mounted) return;
       setState(() {
         _isRecording = false;
         _audioForm = _AudioFormState.idle;
       });
     }
     if (mounted) Navigator.pop(context);
-    _resetSheet();
   }
 
   void _resetSheet() {
@@ -291,7 +303,22 @@ class _NotesScreenState extends State<NotesScreen> {
     _pendingAudioFile?.delete().catchError((_) => null);
     _pendingAudioFile = null;
     FocusManager.instance.primaryFocus?.unfocus();
-    await _whisperService.startRecording();
+    try {
+      await _whisperService.startRecording();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: const Text('No se pudo iniciar el micrófono'),
+              backgroundColor: CR.red),
+        );
+      }
+      return;
+    }
+    if (!mounted) {
+      _whisperService.cancelRecording().catchError((_) => null);
+      return;
+    }
     _recordedAt = DateTime.now();
     setState(() {
       _isRecording = true;
@@ -320,6 +347,7 @@ class _NotesScreenState extends State<NotesScreen> {
     try {
       audioFile = await _whisperService.stopAndGetFile();
     } catch (_) {}
+    if (!mounted) return;
     setState(() {
       _isRecording = false;
       _seconds = 0;
@@ -375,7 +403,7 @@ class _NotesScreenState extends State<NotesScreen> {
         final note = await _service.uploadAudio(
           patientId: widget.patientId,
           authorId: widget.currentUser.userId,
-          recordedAt: _recordedAt!.toIso8601String(),
+          recordedAt: (_recordedAt ?? DateTime.now()).toIso8601String(),
           audioFile: file,
         );
         if (!mounted) return;
@@ -418,6 +446,7 @@ class _NotesScreenState extends State<NotesScreen> {
         // transcripciones de servidor sin revisión del usuario
         audioConfirmed: true,
       );
+      if (!mounted) return null;
       setState(() => _notes.add(note));
       _scrollToBottom();
       _startPollingIfNeeded();
@@ -486,31 +515,55 @@ class _NotesScreenState extends State<NotesScreen> {
     final isPlaying = _playing[note.id] ?? false;
 
     if (isPlaying) {
-      await _players[note.id]?.stop();
+      try {
+        await _players[note.id]?.stop();
+      } catch (_) {}
+      if (!mounted) return;
+      _audioSubs[note.id]?.cancel();
+      _audioSubs.remove(note.id);
       setState(() => _playing[note.id] = false);
       return;
     }
 
     for (final entry in _players.entries) {
       if (entry.key != note.id) {
-        await entry.value.stop();
+        try {
+          await entry.value.stop();
+        } catch (_) {}
         _playing[entry.key] = false;
+        _audioSubs[entry.key]?.cancel();
+        _audioSubs.remove(entry.key);
       }
     }
+    if (!mounted) return;
 
     final player = _players.putIfAbsent(note.id, () => AudioPlayer());
     final url = _service.audioUrl(note.id);
 
-    player.onPlayerComplete.listen((_) {
-      if (mounted) {
-        setState(() {
-          _playing[note.id] = false;
-          _played.add(note.id);
-        });
-      }
+    _audioSubs[note.id]?.cancel();
+    _audioSubs[note.id] = player.onPlayerComplete.listen<void>((_) {
+      if (!mounted) return;
+      setState(() {
+        _playing[note.id] = false;
+        _played.add(note.id);
+      });
     });
 
-    await player.play(UrlSource(url));
+    try {
+      await player.play(UrlSource(url));
+    } catch (e) {
+      _audioSubs[note.id]?.cancel();
+      _audioSubs.remove(note.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('No se pudo reproducir el audio: $e'),
+              backgroundColor: CR.red),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
     setState(() => _playing[note.id] = true);
   }
 

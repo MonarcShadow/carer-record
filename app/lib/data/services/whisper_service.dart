@@ -117,7 +117,9 @@ class WhisperService {
   Future<bool> isRecording() => _recorder.isRecording();
 
   Future<void> cancelRecording() async {
-    await _recorder.stop();
+    try {
+      await _recorder.stop();
+    } catch (_) {}
     if (_currentRecordingPath != null) {
       final f = File(_currentRecordingPath!);
       if (f.existsSync()) f.deleteSync();

@@ -47,12 +47,15 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _checkSession() async {
-    final session = await AuthPreferences.getSession();
-    final biometric = await AuthPreferences.getBiometric();
-    setState(() {
-      _hasSession = session['token'] != null && biometric;
-    });
-    if (_hasSession) _tryBiometricLogin();
+    try {
+      final session = await AuthPreferences.getSession();
+      final biometric = await AuthPreferences.getBiometric();
+      if (!mounted) return;
+      setState(() {
+        _hasSession = session['token'] != null && biometric;
+      });
+      if (_hasSession) _tryBiometricLogin();
+    } catch (_) {}
   }
 
   Future<void> _tryBiometricLogin() async {

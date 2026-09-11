@@ -30,18 +30,23 @@ class _AppDrawerState extends State<AppDrawer> {
   }
 
   Future<void> _loadPreferences() async {
-    final biometric = await AuthPreferences.getBiometric();
-    setState(() {
-      _biometricEnabled = biometric;
-    });
+    try {
+      final biometric = await AuthPreferences.getBiometric();
+      if (!mounted) return;
+      setState(() {
+        _biometricEnabled = biometric;
+      });
+    } catch (_) {}
   }
 
   Future<void> _checkBiometrics() async {
     try {
       final available = await _localAuth.canCheckBiometrics;
       final enrolled  = await _localAuth.isDeviceSupported();
+      if (!mounted) return;
       setState(() => _hasBiometrics = available && enrolled);
     } catch (_) {
+      if (!mounted) return;
       setState(() => _hasBiometrics = false);
     }
   }
@@ -53,7 +58,10 @@ class _AppDrawerState extends State<AppDrawer> {
       );
       if (!authenticated) return;
     }
-    await AuthPreferences.setBiometric(value);
+    try {
+      await AuthPreferences.setBiometric(value);
+    } catch (_) {}
+    if (!mounted) return;
     setState(() => _biometricEnabled = value);
   }
 

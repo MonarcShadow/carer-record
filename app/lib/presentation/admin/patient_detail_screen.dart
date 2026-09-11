@@ -253,6 +253,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     });
     try {
       final p = await _service.getPatientById(widget.patientId);
+      if (!mounted) return;
       for (final key in p.sections.keys) {
         _expanded.putIfAbsent(key, () => false);
       }
@@ -261,6 +262,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
         _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.toString().replaceAll('Exception: ', '');
         _loading = false;

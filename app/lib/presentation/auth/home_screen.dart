@@ -5,6 +5,9 @@ import '../../data/remote/patients_service.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/cr_widgets.dart';
 import '../admin/patient_detail_screen.dart';
+import '../admin/users_screen.dart';
+import '../admin/user_form_screen.dart';
+import '../admin/patients_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final LoginResponseDto user;
@@ -62,7 +65,8 @@ class _HomeScreenState extends State<HomeScreen> {
             : a.firstName.toLowerCase().compareTo(b.firstName.toLowerCase());
       });
       final wardSet = patients.map((p) => p.ward).where((w) => w.isNotEmpty).toSet().toList()
-        ..sort();
+         ..sort();
+      if (!mounted) return;
       setState(() {
         _all = patients;
         _wards = wardSet;
@@ -70,6 +74,7 @@ class _HomeScreenState extends State<HomeScreen> {
       });
       _applyFilter();
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.toString().replaceAll('Exception: ', '');
         _loading = false;
@@ -230,6 +235,50 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
+            // ── Gestión (solo admin) ─────────────────────────────────────
+            if (widget.user.userRole == 'admin') ...[
+              const Padding(
+                padding: EdgeInsets.fromLTRB(14, 4, 16, 0),
+                child: CRSectionLabel(text: 'Gestión'),
+              ),
+              const SizedBox(height: 4),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  children: [
+                    _AdminTile(
+                      icon: Icons.people,
+                      label: 'Usuarios',
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const UsersScreen()),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    _AdminTile(
+                      icon: Icons.person_add,
+                      label: 'Agregar médico',
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const UserFormScreen()),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    _AdminTile(
+                      icon: Icons.local_hospital,
+                      label: 'Pacientes',
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => PatientsScreen(user: widget.user)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             // ── Lista de pacientes ───────────────────────────────────────
             Expanded(
               child: _loading
@@ -331,5 +380,61 @@ class _HomeScreenState extends State<HomeScreen> {
       default:
         return '—';
     }
+  }
+}
+
+class _AdminTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _AdminTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = CRTokens.of(context);
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
+          decoration: BoxDecoration(
+            color: t.surface,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: t.cardShadow,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: t.isDark ? t.chipBg : CR.mintSoft,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                    icon, size: 20, color: t.isDark ? CR.mint : CR.mintDark),
+              ),
+              const SizedBox(height: 8),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: t.textPrimary),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
