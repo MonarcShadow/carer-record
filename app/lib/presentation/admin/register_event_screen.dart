@@ -81,10 +81,14 @@ class _RegisterEventScreenState extends State<RegisterEventScreen> {
   void initState() {
     super.initState();
     _loadAiState();
+    _textCtrl.addListener(_onControllerChanged);
+    _reviewCtrl.addListener(_onControllerChanged);
   }
 
   @override
   void dispose() {
+    _textCtrl.removeListener(_onControllerChanged);
+    _reviewCtrl.removeListener(_onControllerChanged);
     _textCtrl.dispose();
     _reviewCtrl.dispose();
     _timeTimer?.cancel();
@@ -94,6 +98,11 @@ class _RegisterEventScreenState extends State<RegisterEventScreen> {
     } catch (_) {}
     _whisperService.cancelRecording().catchError((_) => null);
     super.dispose();
+  }
+
+  // Re-renderizar cuando cambia el texto (habilita botones / contador)
+  void _onControllerChanged() {
+    if (mounted) setState(() {});
   }
 
   // ── Carga ──────────────────────────────────────────────────────────────────
