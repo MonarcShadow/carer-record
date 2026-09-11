@@ -413,7 +413,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
 
     final metaParts = [
       if (age != null) '$age años',
-      if (day != null) day,
+      ?day,
     ];
     final meta = metaParts.join(' · ');
 
@@ -725,7 +725,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                               fontWeight: FontWeight.w600,
                               color: t.textPrimary)),
                     ),
-                    if (badge != null && badge! > 0)
+                     if (badge != null && badge > 0)
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 2),

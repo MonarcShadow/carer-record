@@ -621,7 +621,7 @@ class CREventCard extends StatelessWidget {
                           ],
                         ],
                       ),
-                      if (footer != null) footer!,
+                       ?footer,
                     ],
                   ],
                 ),
@@ -838,7 +838,7 @@ class CRNavBar extends StatelessWidget {
               ),
             ),
           SizedBox(width: right != null ? 0 : 30),
-          if (right != null) right!,
+           ?right,
         ],
       ),
     );

@@ -261,7 +261,9 @@ class _NotesScreenState extends State<NotesScreen> {
   void _resetSheet() {
     _textCtrl.clear();
     _reviewCtrl.clear();
-    _pendingAudioFile?.delete().catchError((_) => null);
+    try {
+      _pendingAudioFile?.deleteSync();
+    } catch (_) {}
     setState(() {
       _sheetOpen = false;
       _sheetMode = 'audio';
@@ -300,7 +302,9 @@ class _NotesScreenState extends State<NotesScreen> {
       }
       return;
     }
-    _pendingAudioFile?.delete().catchError((_) => null);
+    try {
+      _pendingAudioFile?.deleteSync();
+    } catch (_) {}
     _pendingAudioFile = null;
     FocusManager.instance.primaryFocus?.unfocus();
     try {
@@ -541,7 +545,7 @@ class _NotesScreenState extends State<NotesScreen> {
     final url = _service.audioUrl(note.id);
 
     _audioSubs[note.id]?.cancel();
-    _audioSubs[note.id] = player.onPlayerComplete.listen<void>((_) {
+    _audioSubs[note.id] = player.onPlayerComplete.listen((_) {
       if (!mounted) return;
       setState(() {
         _playing[note.id] = false;
@@ -1313,7 +1317,9 @@ class _NotesScreenState extends State<NotesScreen> {
   }
 
   void _discardRecording() {
-    _pendingAudioFile?.delete().catchError((_) => null);
+    try {
+      _pendingAudioFile?.deleteSync();
+    } catch (_) {}
     setState(() {
       _pendingAudioFile = null;
       _audioForm = _AudioFormState.idle;
